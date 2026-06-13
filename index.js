@@ -365,3 +365,9 @@ app.post('/api/payment/webhook', async (req, res) => {
   
   res.sendStatus(200);
 });
+
+// ============ GROUP GIFT ROUTES ============
+const groupGiftRoutes = require('./routes/group-gifts');
+app.use('/api/group-gifts', groupGiftRoutes);
+
+// Group Gift Routes
