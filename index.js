@@ -27,7 +27,7 @@ app.get("/api/gifts", (req, res) => {
 // Register endpoint - WITH email normalization
 app.post("/api/auth/register", (req, res) => {
     const { email, password, name, username } = req.body;
-    const normalizedEmail = email.toLowerCase(); // ← FORCE LOWERCASE
+    const normalizedEmail = email.toLowerCase();
     
     // Check if user exists
     const existingUser = users.find(u => u.email === normalizedEmail);
@@ -53,7 +53,7 @@ app.post("/api/auth/register", (req, res) => {
 // Login endpoint - WITH email normalization
 app.post("/api/auth/login", (req, res) => {
     const { email, password } = req.body;
-    const normalizedEmail = email.toLowerCase(); // ← FORCE LOWERCASE
+    const normalizedEmail = email.toLowerCase();
     
     const user = users.find(u => u.email === normalizedEmail);
     if (!user) {
