@@ -7,6 +7,13 @@ const router = express.Router();
 let groupGifts = [];
 let groupGiftContributions = [];
 
+// Helper to recalculate currentAmount from contributors
+const recalculateCurrentAmount = (gift) => {
+  const total = gift.contributors.reduce((sum, c) => sum + (c.amount || 0), 0);
+  gift.currentAmount = total;
+  return total;
+};
+
 // Middleware to verify token
 const verifyToken = (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -24,13 +31,25 @@ const verifyToken = (req, res, next) => {
 
 // GET /api/group-gifts - Get all group gifts
 router.get('/', (req, res) => {
+  groupGifts.forEach(g => recalculateCurrentAmount(g));
   res.json(groupGifts);
 });
 
 // GET /api/group-gifts/active - Get active group gifts
 router.get('/active', (req, res) => {
   const active = groupGifts.filter(g => g.status === 'active');
+  active.forEach(g => recalculateCurrentAmount(g));
   res.json(active);
+});
+
+// GET /api/group-gifts/:id - Get single group gift
+router.get('/:id', (req, res) => {
+  const gift = groupGifts.find(g => g.id === req.params.id);
+  if (!gift) {
+    return res.status(404).json({ error: 'Group gift not found' });
+  }
+  recalculateCurrentAmount(gift);
+  res.json(gift);
 });
 
 // POST /api/group-gifts - Create a group gift
@@ -83,19 +102,24 @@ router.post('/:id/contribute', [
     return res.status(400).json({ error: 'Group gift already completed' });
   }
   
-  if (gift.currentAmount + amount > gift.targetAmount) {
+  const contributionAmount = parseFloat(amount);
+  const currentTotal = recalculateCurrentAmount(gift);
+  
+  if (currentTotal + contributionAmount > gift.targetAmount) {
     return res.status(400).json({ error: 'Contribution would exceed target' });
   }
   
-  gift.currentAmount += parseFloat(amount);
-  gift.contributorsCount += 1;
   gift.contributors.push({
     userName: userName || 'Anonymous',
-    amount: parseFloat(amount),
+    amount: contributionAmount,
     date: new Date().toISOString()
   });
+  gift.contributorsCount += 1;
   
-  const isComplete = gift.currentAmount >= gift.targetAmount;
+  // Recalculate and update currentAmount
+  const newTotal = recalculateCurrentAmount(gift);
+  
+  const isComplete = newTotal >= gift.targetAmount;
   if (isComplete) {
     gift.status = 'completed';
     gift.completedAt = new Date().toISOString();
@@ -104,19 +128,10 @@ router.post('/:id/contribute', [
   res.json({ 
     success: true, 
     isComplete,
-    currentAmount: gift.currentAmount,
+    currentAmount: newTotal,
     targetAmount: gift.targetAmount,
     message: isComplete ? 'Group gift completed!' : 'Contribution added successfully'
   });
-});
-
-// GET /api/group-gifts/:id - Get single group gift
-router.get('/:id', (req, res) => {
-  const gift = groupGifts.find(g => g.id === req.params.id);
-  if (!gift) {
-    return res.status(404).json({ error: 'Group gift not found' });
-  }
-  res.json(gift);
 });
 
 module.exports = router;
