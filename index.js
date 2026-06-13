@@ -394,3 +394,23 @@ app.post('/api/friends/unfriend', async (req, res) => {
   
   res.json({ success: true });
 });
+
+// Search users endpoint
+app.get('/api/users/search', (req, res) => {
+  const { q } = req.query;
+  if (!q || q.length < 2) {
+    return res.json([]);
+  }
+  
+  const results = data.users.filter(user => 
+    user.name?.toLowerCase().includes(q.toLowerCase()) ||
+    user.username?.toLowerCase().includes(q.toLowerCase())
+  ).map(user => ({
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    email: user.email
+  }));
+  
+  res.json(results);
+});
