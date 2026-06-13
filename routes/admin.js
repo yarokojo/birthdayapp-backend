@@ -62,7 +62,7 @@ const verifyToken = (req, res, next) => {
 
 // Admin Login
 router.post('/login', [
-  body('email').isEmail().normalizeEmail(),
+  body('email').isEmail().normalizeEmail({ gmail_remove_dots: false, all_lowercase: true }),
   body('password').notEmpty()
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -93,7 +93,7 @@ router.post('/login', [
 
 // Register new admin
 router.post('/register', [
-  body('email').isEmail().normalizeEmail(),
+  body('email').isEmail().normalizeEmail({ gmail_remove_dots: false, all_lowercase: true }),
   body('password').isLength({ min: 6 }),
   body('name').notEmpty(),
   body('secretKey').notEmpty()
