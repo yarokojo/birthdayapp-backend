@@ -245,3 +245,152 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`💰 Total fees collected: ₵${data.companyAccount.totalFees}`);
   console.log(`🎬 Video upload endpoint: /api/upload/video`);
 });
+
+// ============ FRIEND REQUEST SYSTEM ============
+
+// In-memory storage for friend requests
+if (!data.friendRequests) {
+  data.friendRequests = [];
+}
+if (!data.friendships) {
+  data.friendships = [];
+}
+
+// Send friend request
+app.post('/api/friends/request', async (req, res) => {
+  const { fromUserId, toUserId } = req.body;
+  
+  // Check if already friends
+  const existingFriendship = data.friendships.find(
+    f => (f.userId === fromUserId && f.friendId === toUserId) ||
+         (f.userId === toUserId && f.friendId === fromUserId)
+  );
+  
+  if (existingFriendship) {
+    return res.status(400).json({ error: 'Already friends' });
+  }
+  
+  // Check if request already exists
+  const existingRequest = data.friendRequests.find(
+    r => r.fromUserId === fromUserId && r.toUserId === toUserId && r.status === 'pending'
+  );
+  
+  if (existingRequest) {
+    return res.status(400).json({ error: 'Friend request already sent' });
+  }
+  
+  const newRequest = {
+    id: Date.now().toString(),
+    fromUserId: parseInt(fromUserId),
+    toUserId: parseInt(toUserId),
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  };
+  
+  data.friendRequests.push(newRequest);
+  saveData();
+  
+  res.json({ success: true, request: newRequest });
+});
+
+// Accept friend request
+app.post('/api/friends/accept', async (req, res) => {
+  const { requestId, userId } = req.body;
+  
+  const request = data.friendRequests.find(r => r.id === requestId);
+  if (!request) {
+    return res.status(404).json({ error: 'Request not found' });
+  }
+  
+  if (request.toUserId !== parseInt(userId)) {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+  
+  request.status = 'accepted';
+  
+  // Create friendship (bidirectional)
+  data.friendships.push({
+    id: Date.now().toString(),
+    userId: request.fromUserId,
+    friendId: request.toUserId,
+    createdAt: new Date().toISOString()
+  });
+  data.friendships.push({
+    id: (Date.now() + 1).toString(),
+    userId: request.toUserId,
+    friendId: request.fromUserId,
+    createdAt: new Date().toISOString()
+  });
+  
+  saveData();
+  
+  res.json({ success: true });
+});
+
+// Decline friend request
+app.post('/api/friends/decline', async (req, res) => {
+  const { requestId, userId } = req.body;
+  
+  const request = data.friendRequests.find(r => r.id === requestId);
+  if (!request) {
+    return res.status(404).json({ error: 'Request not found' });
+  }
+  
+  if (request.toUserId !== parseInt(userId)) {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+  
+  request.status = 'declined';
+  saveData();
+  
+  res.json({ success: true });
+});
+
+// Get pending friend requests for a user
+app.get('/api/friends/requests/:userId', (req, res) => {
+  const { userId } = req.params;
+  
+  const pendingRequests = data.friendRequests.filter(
+    r => r.toUserId === parseInt(userId) && r.status === 'pending'
+  );
+  
+  // Get sender details
+  const requestsWithDetails = pendingRequests.map(req => {
+    const fromUser = data.users.find(u => u.id === req.fromUserId);
+    return {
+      ...req,
+      fromUser: fromUser ? { id: fromUser.id, name: fromUser.name, email: fromUser.email, username: fromUser.username } : null
+    };
+  });
+  
+  res.json({ requests: requestsWithDetails });
+});
+
+// Get friends list for a user
+app.get('/api/friends/list/:userId', (req, res) => {
+  const { userId } = req.params;
+  
+  const friendships = data.friendships.filter(f => f.userId === parseInt(userId));
+  
+  const friends = friendships.map(f => {
+    const friend = data.users.find(u => u.id === f.friendId);
+    return friend ? { id: friend.id, name: friend.name, email: friend.email, username: friend.username } : null;
+  }).filter(Boolean);
+  
+  res.json({ friends });
+});
+
+// Unfriend
+app.post('/api/friends/unfriend', async (req, res) => {
+  const { userId, friendId } = req.body;
+  
+  // Remove both directions of friendship
+  data.friendships = data.friendships.filter(
+    f => !(f.userId === parseInt(userId) && f.friendId === parseInt(friendId)) &&
+         !(f.userId === parseInt(friendId) && f.friendId === parseInt(userId))
+  );
+  
+  saveData();
+  
+  res.json({ success: true });
+});
