@@ -304,3 +304,64 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log(`💰 Total fees collected: ₵${data.companyAccount.totalFees}`);
     console.log(`✅ Email normalization is ACTIVE`);
 });
+
+// ============ MOBILE MONEY PAYMENT ENDPOINTS ============
+const paymentService = require('./services/payment');
+
+// Initialize mobile money payment
+app.post('/api/payment/initialize', async (req, res) => {
+  const { amount, email, phone, name, giftName } = req.body;
+  
+  if (!amount || !email || !phone || !name) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  console.log(`[API] Payment request: ₵${amount} for ${giftName} to ${phone}`);
+  
+  const result = await paymentService.initializeMobileMoneyPayment(
+    amount, email, phone, name, giftName
+  );
+  
+  if (result.success) {
+    res.json({
+      success: true,
+      authorization_url: result.authorization_url,
+      reference: result.reference,
+      message: result.message
+    });
+  } else {
+    res.status(400).json({ error: result.error });
+  }
+});
+
+// Verify payment
+app.get('/api/payment/verify', async (req, res) => {
+  const { reference } = req.query;
+  
+  if (!reference) {
+    return res.status(400).json({ error: 'Reference required' });
+  }
+  
+  const result = await paymentService.verifyPayment(reference);
+  
+  if (result.success) {
+    res.json({
+      success: true,
+      message: 'Payment verified successfully',
+      transaction: result,
+    });
+  } else {
+    res.status(400).json({ error: result.error });
+  }
+});
+
+// Webhook for Paystack
+app.post('/api/payment/webhook', async (req, res) => {
+  const event = req.body;
+  
+  if (event.event === 'charge.success') {
+    console.log(`[WEBHOOK] Payment successful: ${event.data.reference}`);
+  }
+  
+  res.sendStatus(200);
+});
