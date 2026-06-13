@@ -371,3 +371,80 @@ const groupGiftRoutes = require('./routes/group-gifts');
 app.use('/api/group-gifts', groupGiftRoutes);
 
 // Group Gift Routes
+
+// Video upload endpoint
+const multer = require('multer');
+const path = require('path');
+
+// Configure multer for video storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files are allowed'));
+    }
+  }
+});
+
+// Serve static video files
+app.use('/uploads', express.static('uploads'));
+
+// Upload video endpoint
+app.post('/api/upload/video', upload.single('video'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No video file uploaded' });
+  }
+  
+  const videoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+  res.json({ videoUrl: videoUrl });
+});
+
+// ============ VIDEO UPLOAD ============
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, 'uploads/'),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB
+});
+
+// Serve uploaded videos
+app.use('/uploads', express.static('uploads'));
+
+// Upload endpoint
+app.post('/api/upload/video', upload.single('video'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No video file' });
+  }
+  const videoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+  res.json({ success: true, videoUrl });
+});
