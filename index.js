@@ -742,3 +742,12 @@ app.get("/api/users/:userId/is-following/:targetId", (req, res) => {
   const isFollowing = data.follows.some(f => f.followerId === userId && f.followingId === targetId);
   res.json({ isFollowing });
 });
+
+// ============ VIDEO POSITIONS ENDPOINTS (FIXED) ============
+app.get("/api/video-positions/:userId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.videoPositions) data.videoPositions = [];
+  const userPositions = data.videoPositions.filter(v => v.userId === userId);
+  // Return as array, not object
+  res.json({ positions: userPositions });
+});
