@@ -18,6 +18,17 @@ let data = {
   wallets: {},
   companyFees: [],
   giftTransactions: [],
+  notifications: [],
+  groupGifts: [],
+  friendRequests: [],
+  friendships: [],
+  follows: [],
+  posts: [],
+  stories: [],
+  postLikes: [],
+  bookmarks: [],
+  videoPositions: [],
+  seenStories: [],
   companyAccount: {
     name: 'MeolCompany',
     accountNumber: '0596270302',
@@ -87,39 +98,23 @@ const addToWallet = (userId, amount, giftName, fromName) => {
   return data.wallets[userId].balance;
 };
 
-const withdrawFromWallet = (userId, amount, network, phoneNumber) => {
-  const currentBalance = getWalletBalance(userId);
-  if (currentBalance < amount) return { success: false, error: 'Insufficient balance' };
-  
-  const fee = amount * 0.01;
-  const netReceived = amount - fee;
-  const newBalance = currentBalance - amount;
-  
-  data.wallets[userId].balance = newBalance;
-  data.wallets[userId].transactions.unshift({
+const addNotification = (userId, type, title, message, imageUrl = null, targetId = null, targetName = null, extraData = {}) => {
+  const newNotification = {
     id: Date.now().toString(),
-    type: 'debit',
-    amount,
-    fee,
-    netReceived,
-    network,
-    phoneNumber,
-    date: new Date().toISOString()
-  });
-  
-  data.companyFees.unshift({
-    id: Date.now().toString(),
-    amount: fee,
-    fromUserId: userId,
-    withdrawalAmount: amount,
-    date: new Date().toISOString(),
-    companyAccount: data.companyAccount.accountNumber
-  });
-  
-  data.companyAccount.totalFees += fee;
+    userId: parseInt(userId),
+    type,
+    title,
+    message,
+    imageUrl,
+    targetId,
+    targetName,
+    extraData,
+    isRead: false,
+    createdAt: new Date().toISOString()
+  };
+  data.notifications.unshift(newNotification);
   saveData();
-  
-  return { success: true, fee, received: netReceived, newBalance };
+  return newNotification;
 };
 
 // ============ HEALTH CHECK ============
@@ -129,16 +124,23 @@ app.get("/health", (req, res) => {
 
 // ============ AUTH ENDPOINTS ============
 app.post("/api/auth/register", (req, res) => {
-  const { email, password, name, username } = req.body;
+  const { email, password, name, username, birthDate } = req.body;
   const normalizedEmail = email.toLowerCase();
   if (data.users.find(u => u.email === normalizedEmail)) {
     return res.status(400).json({ error: "User already exists" });
   }
-  const newUser = { id: data.users.length + 1, email: normalizedEmail, name, username, created_at: new Date().toISOString() };
+  const newUser = { 
+    id: data.users.length + 1, 
+    email: normalizedEmail, 
+    name, 
+    username,
+    birthDate: birthDate || null,
+    created_at: new Date().toISOString() 
+  };
   data.users.push(newUser);
   if (!data.wallets[newUser.id]) data.wallets[newUser.id] = { balance: 0, transactions: [] };
   saveData();
-  res.json({ token: "test-token-" + Date.now(), user: { id: newUser.id, email: newUser.email, name, username } });
+  res.json({ token: "test-token-" + Date.now(), user: { id: newUser.id, email: newUser.email, name, username, birthDate: newUser.birthDate } });
 });
 
 app.post("/api/auth/login", (req, res) => {
@@ -146,7 +148,7 @@ app.post("/api/auth/login", (req, res) => {
   const normalizedEmail = email.toLowerCase();
   const user = data.users.find(u => u.email === normalizedEmail);
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
-  res.json({ token: "test-token-" + Date.now(), user: { id: user.id, email: user.email, name: user.name, username: user.username } });
+  res.json({ token: "test-token-" + Date.now(), user: { id: user.id, email: user.email, name: user.name, username: user.username, birthDate: user.birthDate } });
 });
 
 // ============ WALLET ENDPOINTS ============
@@ -161,34 +163,462 @@ app.get("/api/wallet/transactions/:userId", (req, res) => {
 });
 
 app.post("/api/wallet/add-gift", (req, res) => {
-  const { celebrantId, celebrantName, giftAmount, giftName, fromName, isAnonymous } = req.body;
+  const { celebrantId, celebrantName, giftAmount, giftName, fromName } = req.body;
   const amount = parseFloat(giftAmount);
-  const senderName = isAnonymous ? 'Anonymous' : (fromName || 'Someone');
+  const senderName = fromName || 'Someone';
   const newBalance = addToWallet(celebrantId, amount, giftName, senderName);
   data.giftTransactions.unshift({ id: Date.now().toString(), celebrantId, celebrantName, giftName, giftAmount: amount, fromName: senderName, date: new Date().toISOString() });
   saveData();
-  res.json({ success: true, newBalance, message: `₵${amount} added to wallet` });
+  addNotification(celebrantId, 'gift', '🎁 Gift Received', `${senderName} sent you ${giftName} worth ₵${amount}!`);
+  res.json({ success: true, newBalance });
 });
 
-app.post("/api/wallet/withdraw", (req, res) => {
-  const { userId, amount, phoneNumber, provider } = req.body;
-  const result = withdrawFromWallet(parseInt(userId), parseFloat(amount), provider, phoneNumber);
-  if (result.success) {
-    res.json({ success: true, message: `Withdrawal successful! ₵${result.received} sent`, newBalance: result.newBalance, fee: result.fee, companyAccount: data.companyAccount });
-  } else {
-    res.status(400).json({ error: result.error });
+app.get("/api/wallet/:userId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const wallet = data.wallets[userId];
+  res.json({ balance: wallet?.balance || 0, transactions: wallet?.transactions || [] });
+});
+
+app.post("/api/wallet/add-funds", (req, res) => {
+  const { userId, amount, giftName, fromName } = req.body;
+  const newBalance = addToWallet(userId, parseFloat(amount), giftName, fromName);
+  res.json({ success: true, newBalance });
+});
+
+// ============ POST ENDPOINTS ============
+app.get("/api/posts", (req, res) => {
+  const allPosts = data.posts || [];
+  res.json(allPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+});
+
+app.post("/api/posts", (req, res) => {
+  const { userId, content, image, video } = req.body;
+  const user = data.users.find(u => u.id === userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  
+  const newPost = {
+    id: Date.now().toString(),
+    userId,
+    content,
+    image: image || null,
+    video: video || null,
+    authorName: user.name,
+    authorHandle: user.username,
+    authorImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    likes: 0,
+    comments: 0,
+    createdAt: new Date().toISOString(),
+    commentList: []
+  };
+  data.posts.unshift(newPost);
+  saveData();
+  res.status(201).json(newPost);
+});
+
+app.delete("/api/posts/:id", (req, res) => {
+  const { id } = req.params;
+  const index = (data.posts || []).findIndex(p => p.id === id);
+  if (index === -1) return res.status(404).json({ error: "Post not found" });
+  data.posts.splice(index, 1);
+  saveData();
+  res.json({ success: true });
+});
+
+// ============ LIKE ENDPOINTS ============
+app.post("/api/posts/:id/like", (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  if (!data.postLikes) data.postLikes = [];
+  const existing = data.postLikes.find(l => l.postId === id && l.userId === userId);
+  if (!existing) {
+    data.postLikes.push({ postId: id, userId, createdAt: new Date().toISOString() });
+    post.likes = (post.likes || 0) + 1;
+    saveData();
+    if (post.userId !== userId) {
+      const user = data.users.find(u => u.id === userId);
+      addNotification(post.userId, 'like', '❤️ Post Liked', `${user?.name || 'Someone'} liked your post`);
+    }
   }
+  res.json({ success: true, likes: post.likes });
 });
 
-app.get("/api/gifts/received/:email", (req, res) => {
-  const user = data.users.find(u => u.email === req.params.email.toLowerCase());
-  const gifts = data.giftTransactions.filter(g => g.celebrantId === user?.id);
-  res.json({ gifts, count: gifts.length });
+app.delete("/api/posts/:id/like", (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  if (data.postLikes) {
+    const index = data.postLikes.findIndex(l => l.postId === id && l.userId === userId);
+    if (index !== -1) {
+      data.postLikes.splice(index, 1);
+      post.likes = Math.max(0, (post.likes || 0) - 1);
+      saveData();
+    }
+  }
+  res.json({ success: true, likes: post.likes });
 });
 
-// ============ COMPANY FEE ENDPOINTS ============
-app.get("/api/company/fees", (req, res) => {
-  res.json({ companyAccount: data.companyAccount, totalFees: data.companyAccount.totalFees, transactions: data.companyFees });
+// ============ COMMENT ENDPOINTS ============
+app.post("/api/posts/:id/comments", (req, res) => {
+  const { id } = req.params;
+  const { userId, text, userName, userAvatar } = req.body;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  const newComment = {
+    id: Date.now().toString(),
+    userId,
+    userName: userName || 'Anonymous',
+    userAvatar: userAvatar || 'https://randomuser.me/api/portraits/men/1.jpg',
+    text,
+    createdAt: new Date().toISOString(),
+    likes: 0
+  };
+  if (!post.commentList) post.commentList = [];
+  post.commentList.push(newComment);
+  post.comments = (post.comments || 0) + 1;
+  saveData();
+  
+  if (post.userId !== userId) {
+    const user = data.users.find(u => u.id === userId);
+    addNotification(post.userId, 'comment', '💬 New Comment', `${user?.name || 'Someone'} commented on your post`);
+  }
+  res.status(201).json(newComment);
+});
+
+app.delete("/api/posts/:postId/comments/:commentId", (req, res) => {
+  const { postId, commentId } = req.params;
+  const post = (data.posts || []).find(p => p.id === postId);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  const index = post.commentList?.findIndex(c => c.id === commentId);
+  if (index === -1) return res.status(404).json({ error: "Comment not found" });
+  post.commentList.splice(index, 1);
+  post.comments = Math.max(0, (post.comments || 0) - 1);
+  saveData();
+  res.json({ success: true });
+});
+
+// ============ STORY ENDPOINTS ============
+app.get("/api/stories", (req, res) => {
+  const now = new Date();
+  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const activeStories = (data.stories || []).filter(s => new Date(s.createdAt) > twentyFourHoursAgo);
+  res.json(activeStories);
+});
+
+app.post("/api/stories", (req, res) => {
+  const { userId, contentUrl, isVideo } = req.body;
+  const user = data.users.find(u => u.id === userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  
+  const newStory = {
+    id: Date.now().toString(),
+    userId,
+    userName: user.name,
+    userHandle: user.username,
+    userAvatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    contentUrl,
+    isVideo: isVideo || false,
+    viewers: 0,
+    createdAt: new Date().toISOString()
+  };
+  data.stories.unshift(newStory);
+  saveData();
+  res.status(201).json(newStory);
+});
+
+// ============ SEEN STORIES ENDPOINTS ============
+app.post("/api/stories/seen", (req, res) => {
+  const { userId, storyId } = req.body;
+  if (!userId || !storyId) {
+    return res.status(400).json({ error: "userId and storyId required" });
+  }
+  if (!data.seenStories) data.seenStories = [];
+  const existing = data.seenStories.find(s => s.userId === userId && s.storyId === storyId);
+  if (!existing) {
+    data.seenStories.push({ id: Date.now().toString(), userId: parseInt(userId), storyId, seenAt: new Date().toISOString() });
+    saveData();
+  }
+  res.json({ success: true });
+});
+
+app.get("/api/stories/seen/:userId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.seenStories) data.seenStories = [];
+  const seenStories = data.seenStories.filter(s => s.userId === userId);
+  const seenStoryIds = seenStories.map(s => s.storyId);
+  res.json({ seenStoryIds });
+});
+
+// ============ BOOKMARK ENDPOINTS ============
+app.post("/api/posts/:id/bookmark", (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+  if (!data.bookmarks) data.bookmarks = [];
+  const existing = data.bookmarks.find(b => b.postId === id && b.userId === userId);
+  if (!existing) {
+    data.bookmarks.push({ postId: id, userId, createdAt: new Date().toISOString() });
+    saveData();
+  }
+  res.json({ success: true });
+});
+
+app.delete("/api/posts/:id/bookmark", (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+  if (data.bookmarks) {
+    const index = data.bookmarks.findIndex(b => b.postId === id && b.userId === userId);
+    if (index !== -1) {
+      data.bookmarks.splice(index, 1);
+      saveData();
+    }
+  }
+  res.json({ success: true });
+});
+
+// ============ NOTIFICATION ENDPOINTS ============
+app.get("/api/notifications/:userId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const userNotifications = data.notifications.filter(n => n.userId === userId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const unreadCount = userNotifications.filter(n => !n.isRead).length;
+  res.json({ notifications: userNotifications, unreadCount });
+});
+
+app.post("/api/notifications", (req, res) => {
+  const { userId, type, title, message, imageUrl, targetId, targetName, extraData } = req.body;
+  if (!userId || !type || !message) return res.status(400).json({ error: "Missing required fields" });
+  const newNotification = addNotification(userId, type, title, message, imageUrl, targetId, targetName, extraData);
+  res.status(201).json(newNotification);
+});
+
+app.put("/api/notifications/:id/read", (req, res) => {
+  const { id } = req.params;
+  const notification = data.notifications.find(n => n.id === id);
+  if (!notification) return res.status(404).json({ error: "Notification not found" });
+  notification.isRead = true;
+  saveData();
+  res.json({ success: true });
+});
+
+app.put("/api/notifications/read-all/:userId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  data.notifications.filter(n => n.userId === userId && !n.isRead).forEach(n => n.isRead = true);
+  saveData();
+  res.json({ success: true });
+});
+
+app.delete("/api/notifications/:id", (req, res) => {
+  const { id } = req.params;
+  const index = data.notifications.findIndex(n => n.id === id);
+  if (index === -1) return res.status(404).json({ error: "Notification not found" });
+  data.notifications.splice(index, 1);
+  saveData();
+  res.json({ success: true });
+});
+
+// ============ FOLLOW/UNFOLLOW ENDPOINTS ============
+app.post("/api/users/follow", (req, res) => {
+  const { followerId, followingId } = req.body;
+  if (!followerId || !followingId) return res.status(400).json({ error: "Missing ids" });
+  if (followerId === followingId) return res.status(400).json({ error: "Cannot follow yourself" });
+  
+  const existing = data.follows.find(f => f.followerId === followerId && f.followingId === followingId);
+  if (!existing) {
+    data.follows.push({ id: Date.now().toString(), followerId: parseInt(followerId), followingId: parseInt(followingId), createdAt: new Date().toISOString() });
+    saveData();
+    const follower = data.users.find(u => u.id === parseInt(followerId));
+    addNotification(parseInt(followingId), 'follow', '👤 New Follower', `${follower?.name || 'Someone'} started following you`);
+  }
+  res.json({ success: true });
+});
+
+app.delete("/api/users/unfollow", (req, res) => {
+  const { followerId, followingId } = req.body;
+  const index = data.follows.findIndex(f => f.followerId === followerId && f.followingId === followingId);
+  if (index !== -1) {
+    data.follows.splice(index, 1);
+    saveData();
+  }
+  res.json({ success: true });
+});
+
+app.get("/api/users/:userId/following", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const following = data.follows.filter(f => f.followerId === userId);
+  const followingUsers = following.map(f => {
+    const user = data.users.find(u => u.id === f.followingId);
+    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
+  }).filter(Boolean);
+  res.json({ following: followingUsers });
+});
+
+app.get("/api/users/:userId/followers", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const followers = data.follows.filter(f => f.followingId === userId);
+  const followerUsers = followers.map(f => {
+    const user = data.users.find(u => u.id === f.followerId);
+    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
+  }).filter(Boolean);
+  res.json({ followers: followerUsers });
+});
+
+app.get("/api/users/:userId/is-following/:targetId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const targetId = parseInt(req.params.targetId);
+  const isFollowing = data.follows.some(f => f.followerId === userId && f.followingId === targetId);
+  res.json({ isFollowing });
+});
+
+// ============ VIDEO POSITION ENDPOINTS ============
+app.post("/api/video-position", (req, res) => {
+  const { userId, postId, positionSeconds } = req.body;
+  if (!userId || !postId || positionSeconds === undefined) {
+    return res.status(400).json({ error: "userId, postId, and positionSeconds required" });
+  }
+  if (!data.videoPositions) data.videoPositions = [];
+  const existingIndex = data.videoPositions.findIndex(v => v.userId === userId && v.postId === postId);
+  if (existingIndex !== -1) {
+    data.videoPositions[existingIndex].positionSeconds = positionSeconds;
+    data.videoPositions[existingIndex].updatedAt = new Date().toISOString();
+  } else {
+    data.videoPositions.push({ id: Date.now().toString(), userId: parseInt(userId), postId, positionSeconds, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  }
+  saveData();
+  res.json({ success: true });
+});
+
+app.get("/api/video-position/:userId/:postId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { postId } = req.params;
+  const position = (data.videoPositions || []).find(v => v.userId === userId && v.postId === postId);
+  res.json({ positionSeconds: position?.positionSeconds || 0 });
+});
+
+app.get("/api/video-positions/:userId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const positions = (data.videoPositions || []).filter(v => v.userId === userId);
+  const positionsMap = {};
+  positions.forEach(p => { positionsMap[p.postId] = p.positionSeconds; });
+  res.json({ positions: positionsMap });
+});
+
+// ============ FRIEND REQUEST ENDPOINTS ============
+app.post('/api/friends/request', (req, res) => {
+  const { fromUserId, toUserId } = req.body;
+  const existing = data.friendRequests.find(r => r.fromUserId === fromUserId && r.toUserId === toUserId && r.status === 'pending');
+  if (existing) return res.status(400).json({ error: 'Request already sent' });
+  
+  const newRequest = { id: Date.now().toString(), fromUserId: parseInt(fromUserId), toUserId: parseInt(toUserId), status: 'pending', createdAt: new Date().toISOString() };
+  data.friendRequests.push(newRequest);
+  saveData();
+  const fromUser = data.users.find(u => u.id === parseInt(fromUserId));
+  addNotification(toUserId, 'friend_request', '👋 Friend Request', `${fromUser?.name || 'Someone'} sent you a friend request`);
+  res.json({ success: true, request: newRequest });
+});
+
+app.post('/api/friends/accept', (req, res) => {
+  const { requestId, userId } = req.body;
+  const request = data.friendRequests.find(r => r.id === requestId);
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.toUserId !== parseInt(userId)) return res.status(403).json({ error: 'Not authorized' });
+  
+  request.status = 'accepted';
+  data.friendships.push({ id: Date.now().toString(), userId: request.fromUserId, friendId: request.toUserId, createdAt: new Date().toISOString() });
+  data.friendships.push({ id: (Date.now() + 1).toString(), userId: request.toUserId, friendId: request.fromUserId, createdAt: new Date().toISOString() });
+  saveData();
+  const toUser = data.users.find(u => u.id === request.toUserId);
+  addNotification(request.fromUserId, 'friend_accept', '✅ Friend Request Accepted', `${toUser?.name || 'Someone'} accepted your friend request`);
+  res.json({ success: true });
+});
+
+app.get('/api/friends/list/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const friendships = data.friendships.filter(f => f.userId === userId);
+  const friends = friendships.map(f => {
+    const friend = data.users.find(u => u.id === f.friendId);
+    return friend ? { id: friend.id, name: friend.name, username: friend.username, profileImage: friend.profileImage, birthDate: friend.birthDate } : null;
+  }).filter(Boolean);
+  res.json({ friends });
+});
+
+app.get('/api/friends/requests/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const pending = data.friendRequests.filter(r => r.toUserId === userId && r.status === 'pending');
+  const withDetails = pending.map(req => {
+    const fromUser = data.users.find(u => u.id === req.fromUserId);
+    return { ...req, fromUser: fromUser ? { id: fromUser.id, name: fromUser.name, username: fromUser.username } : null };
+  });
+  res.json({ requests: withDetails });
+});
+
+// ============ BIRTHDAY ENDPOINTS ============
+app.get("/api/users/birthdays", (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  const userIdNum = parseInt(userId);
+  const user = data.users.find(u => u.id === userIdNum);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  
+  const friendships = data.friendships.filter(f => f.userId === userIdNum);
+  const friendIds = friendships.map(f => f.friendId);
+  const friendsWithBirthdays = data.users.filter(u => friendIds.includes(u.id) && u.birthDate).map(friend => ({
+    id: friend.id, name: friend.name, username: friend.username, birthDate: friend.birthDate, avatar: friend.profileImage
+  }));
+  res.json({ userBirthday: user.birthDate || null, friendsBirthdays: friendsWithBirthdays });
+});
+
+app.put("/api/users/birthday", (req, res) => {
+  const { userId, birthDate } = req.body;
+  const user = data.users.find(u => u.id === parseInt(userId));
+  if (!user) return res.status(404).json({ error: "User not found" });
+  user.birthDate = birthDate || null;
+  saveData();
+  res.json({ success: true, birthDate: user.birthDate });
+});
+
+// ============ GROUP GIFT ENDPOINTS ============
+app.get("/api/group-gifts", (req, res) => {
+  res.json(data.groupGifts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+});
+
+app.post("/api/group-gifts", (req, res) => {
+  const { giftName, celebrantName, targetAmount, deadline, imageUrl, createdBy } = req.body;
+  const newGroupGift = {
+    id: Date.now().toString(),
+    giftName, celebrantName, targetAmount: parseFloat(targetAmount), currentAmount: 0, contributorsCount: 0,
+    deadline: deadline || "No deadline", imageUrl: imageUrl || "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=300&fit=crop",
+    status: 'active', contributors: [], createdBy: createdBy ? parseInt(createdBy) : null, createdAt: new Date().toISOString()
+  };
+  data.groupGifts.unshift(newGroupGift);
+  saveData();
+  res.status(201).json(newGroupGift);
+});
+
+app.post("/api/group-gifts/:id/contribute", (req, res) => {
+  const { id } = req.params;
+  const { userId, userName, amount } = req.body;
+  const gift = data.groupGifts.find(g => g.id === id);
+  if (!gift) return res.status(404).json({ error: "Group gift not found" });
+  if (gift.status !== 'active') return res.status(400).json({ error: "Group gift not active" });
+  
+  const contributionAmount = parseFloat(amount);
+  const newTotal = gift.currentAmount + contributionAmount;
+  if (newTotal > gift.targetAmount) return res.status(400).json({ error: "Contribution exceeds target" });
+  
+  gift.contributors.push({ userId: parseInt(userId), userName: userName || "Anonymous", amount: contributionAmount, date: new Date().toISOString() });
+  gift.contributorsCount += 1;
+  gift.currentAmount = newTotal;
+  if (gift.currentAmount >= gift.targetAmount) {
+    gift.status = 'completed';
+    gift.completedAt = new Date().toISOString();
+  }
+  saveData();
+  res.json({ success: true, isComplete: gift.status === 'completed', currentAmount: gift.currentAmount, targetAmount: gift.targetAmount });
 });
 
 // ============ GIFTS ENDPOINTS ============
@@ -202,36 +632,26 @@ app.get("/api/gifts", (req, res) => {
   ]);
 });
 
-// ============ PAYMENT ENDPOINTS ============
-const paymentService = require('./services/payment');
-
-app.post('/api/payment/initialize', async (req, res) => {
-  const { amount, email, phone, name, giftName } = req.body;
-  if (!amount || !email || !phone || !name) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-  const result = await paymentService.initializeMobileMoneyPayment(amount, email, phone, name, giftName);
-  if (result.success) {
-    res.json({ success: true, authorization_url: result.authorization_url, reference: result.reference });
-  } else {
-    res.status(400).json({ error: result.error });
-  }
+app.post("/api/gifts/purchase", (req, res) => {
+  const { giftId, giftName, amount, network, phoneNumber, buyerId, buyerName, recipientId, recipientName } = req.body;
+  if (!giftId || !amount || !recipientId) return res.status(400).json({ error: "Missing required fields" });
+  
+  const newBalance = addToWallet(recipientId, parseFloat(amount), giftName, buyerName || 'Someone');
+  const transaction = { id: Date.now().toString(), giftId, giftName, amount: parseFloat(amount), buyerId, buyerName, recipientId, recipientName, network, phoneNumber, status: 'completed', date: new Date().toISOString() };
+  data.giftTransactions.unshift(transaction);
+  saveData();
+  addNotification(recipientId, 'gift', '🎁 Gift Received', `${buyerName || 'Someone'} sent you ${giftName} worth ₵${amount}!`);
+  res.json({ success: true, transaction, newBalance });
 });
 
-app.get('/api/payment/verify', async (req, res) => {
-  const { reference } = req.query;
-  if (!reference) return res.status(400).json({ error: 'Reference required' });
-  const result = await paymentService.verifyPayment(reference);
-  if (result.success) {
-    res.json({ success: true, transaction: result });
-  } else {
-    res.status(400).json({ error: result.error });
-  }
+// ============ SEARCH ENDPOINTS ============
+app.get('/api/users/search', (req, res) => {
+  const { q } = req.query;
+  if (!q || q.length < 2) return res.json([]);
+  const results = data.users.filter(user => user.name?.toLowerCase().includes(q.toLowerCase()) || user.username?.toLowerCase().includes(q.toLowerCase()))
+    .map(user => ({ id: user.id, name: user.name, username: user.username, profileImage: user.profileImage, birthDate: user.birthDate }));
+  res.json(results);
 });
-
-// ============ GROUP GIFT ROUTES ============
-const groupGiftRoutes = require('./routes/group-gifts');
-app.use('/api/group-gifts', groupGiftRoutes);
 
 // ============ ROOT ENDPOINT ============
 app.get("/", (req, res) => {
@@ -241,176 +661,84 @@ app.get("/", (req, res) => {
 // ============ START SERVER ============
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🏦 Company: ${data.companyAccount.name} (${data.companyAccount.accountNumber})`);
-  console.log(`💰 Total fees collected: ₵${data.companyAccount.totalFees}`);
-  console.log(`🎬 Video upload endpoint: /api/upload/video`);
+  console.log(`👥 Users: ${data.users.length}`);
+  console.log(`📢 Notifications: ${data.notifications.length}`);
+  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
+  console.log(`📚 Stories seen endpoint: /api/stories/seen/:userId`);
 });
 
-// ============ FRIEND REQUEST SYSTEM ============
-
-// In-memory storage for friend requests
-if (!data.friendRequests) {
-  data.friendRequests = [];
-}
-if (!data.friendships) {
-  data.friendships = [];
-}
-
-// Send friend request
-app.post('/api/friends/request', async (req, res) => {
-  const { fromUserId, toUserId } = req.body;
-  
-  // Check if already friends
-  const existingFriendship = data.friendships.find(
-    f => (f.userId === fromUserId && f.friendId === toUserId) ||
-         (f.userId === toUserId && f.friendId === fromUserId)
-  );
-  
-  if (existingFriendship) {
-    return res.status(400).json({ error: 'Already friends' });
-  }
-  
-  // Check if request already exists
-  const existingRequest = data.friendRequests.find(
-    r => r.fromUserId === fromUserId && r.toUserId === toUserId && r.status === 'pending'
-  );
-  
-  if (existingRequest) {
-    return res.status(400).json({ error: 'Friend request already sent' });
-  }
-  
-  const newRequest = {
-    id: Date.now().toString(),
-    fromUserId: parseInt(fromUserId),
-    toUserId: parseInt(toUserId),
-    status: 'pending',
-    createdAt: new Date().toISOString()
-  };
-  
-  data.friendRequests.push(newRequest);
-  saveData();
-  
-  res.json({ success: true, request: newRequest });
+// ============ VIDEO POSITIONS ENDPOINTS ============
+app.get("/api/video-positions/:userId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.videoPositions) data.videoPositions = [];
+  const userPositions = data.videoPositions.filter(v => v.userId === userId);
+  const positions = {};
+  userPositions.forEach(p => { positions[p.postId] = p.positionSeconds; });
+  res.json({ positions });
 });
 
-// Accept friend request
-app.post('/api/friends/accept', async (req, res) => {
-  const { requestId, userId } = req.body;
-  
-  const request = data.friendRequests.find(r => r.id === requestId);
-  if (!request) {
-    return res.status(404).json({ error: 'Request not found' });
+app.post("/api/video-position", (req, res) => {
+  const { userId, postId, positionSeconds } = req.body;
+  if (!userId || !postId) return res.status(400).json({ error: "Missing userId or postId" });
+  if (!data.videoPositions) data.videoPositions = [];
+  const existingIndex = data.videoPositions.findIndex(v => v.userId === userId && v.postId === postId);
+  if (existingIndex !== -1) {
+    data.videoPositions[existingIndex].positionSeconds = positionSeconds;
+    data.videoPositions[existingIndex].updatedAt = new Date().toISOString();
+  } else {
+    data.videoPositions.push({ id: Date.now().toString(), userId, postId, positionSeconds, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   }
-  
-  if (request.toUserId !== parseInt(userId)) {
-    return res.status(403).json({ error: 'Not authorized' });
-  }
-  
-  request.status = 'accepted';
-  
-  // Create friendship (bidirectional)
-  data.friendships.push({
-    id: Date.now().toString(),
-    userId: request.fromUserId,
-    friendId: request.toUserId,
-    createdAt: new Date().toISOString()
-  });
-  data.friendships.push({
-    id: (Date.now() + 1).toString(),
-    userId: request.toUserId,
-    friendId: request.fromUserId,
-    createdAt: new Date().toISOString()
-  });
-  
   saveData();
-  
   res.json({ success: true });
 });
 
-// Decline friend request
-app.post('/api/friends/decline', async (req, res) => {
-  const { requestId, userId } = req.body;
-  
-  const request = data.friendRequests.find(r => r.id === requestId);
-  if (!request) {
-    return res.status(404).json({ error: 'Request not found' });
+// ============ SEEN STORIES ENDPOINTS ============
+app.get("/api/stories/seen/:userId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.seenStories) data.seenStories = [];
+  const seen = data.seenStories.filter(s => s.userId === userId).map(s => s.storyId);
+  res.json({ seenStoryIds: seen });
+});
+
+app.post("/api/stories/seen", (req, res) => {
+  const { userId, storyId } = req.body;
+  if (!userId || !storyId) return res.status(400).json({ error: "Missing userId or storyId" });
+  if (!data.seenStories) data.seenStories = [];
+  const exists = data.seenStories.some(s => s.userId === userId && s.storyId === storyId);
+  if (!exists) {
+    data.seenStories.push({ id: Date.now().toString(), userId, storyId, seenAt: new Date().toISOString() });
+    saveData();
   }
-  
-  if (request.toUserId !== parseInt(userId)) {
-    return res.status(403).json({ error: 'Not authorized' });
-  }
-  
-  request.status = 'declined';
-  saveData();
-  
   res.json({ success: true });
 });
 
-// Get pending friend requests for a user
-app.get('/api/friends/requests/:userId', (req, res) => {
-  const { userId } = req.params;
-  
-  const pendingRequests = data.friendRequests.filter(
-    r => r.toUserId === parseInt(userId) && r.status === 'pending'
-  );
-  
-  // Get sender details
-  const requestsWithDetails = pendingRequests.map(req => {
-    const fromUser = data.users.find(u => u.id === req.fromUserId);
-    return {
-      ...req,
-      fromUser: fromUser ? { id: fromUser.id, name: fromUser.name, email: fromUser.email, username: fromUser.username } : null
-    };
-  });
-  
-  res.json({ requests: requestsWithDetails });
-});
-
-// Get friends list for a user
-app.get('/api/friends/list/:userId', (req, res) => {
-  const { userId } = req.params;
-  
-  const friendships = data.friendships.filter(f => f.userId === parseInt(userId));
-  
-  const friends = friendships.map(f => {
-    const friend = data.users.find(u => u.id === f.friendId);
-    return friend ? { id: friend.id, name: friend.name, email: friend.email, username: friend.username } : null;
+// ============ FOLLOWING ENDPOINTS ============
+app.get("/api/users/:userId/following", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.follows) data.follows = [];
+  const following = data.follows.filter(f => f.followerId === userId);
+  const result = following.map(f => {
+    const user = data.users.find(u => u.id === f.followingId);
+    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
   }).filter(Boolean);
-  
-  res.json({ friends });
+  res.json({ following: result });
 });
 
-// Unfriend
-app.post('/api/friends/unfriend', async (req, res) => {
-  const { userId, friendId } = req.body;
-  
-  // Remove both directions of friendship
-  data.friendships = data.friendships.filter(
-    f => !(f.userId === parseInt(userId) && f.friendId === parseInt(friendId)) &&
-         !(f.userId === parseInt(friendId) && f.friendId === parseInt(userId))
-  );
-  
-  saveData();
-  
-  res.json({ success: true });
+app.get("/api/users/:userId/followers", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.follows) data.follows = [];
+  const followers = data.follows.filter(f => f.followingId === userId);
+  const result = followers.map(f => {
+    const user = data.users.find(u => u.id === f.followerId);
+    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
+  }).filter(Boolean);
+  res.json({ followers: result });
 });
 
-// Search users endpoint
-app.get('/api/users/search', (req, res) => {
-  const { q } = req.query;
-  if (!q || q.length < 2) {
-    return res.json([]);
-  }
-  
-  const results = data.users.filter(user => 
-    user.name?.toLowerCase().includes(q.toLowerCase()) ||
-    user.username?.toLowerCase().includes(q.toLowerCase())
-  ).map(user => ({
-    id: user.id,
-    name: user.name,
-    username: user.username,
-    email: user.email
-  }));
-  
-  res.json(results);
+app.get("/api/users/:userId/is-following/:targetId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const targetId = parseInt(req.params.targetId);
+  if (!data.follows) data.follows = [];
+  const isFollowing = data.follows.some(f => f.followerId === userId && f.followingId === targetId);
+  res.json({ isFollowing });
 });
