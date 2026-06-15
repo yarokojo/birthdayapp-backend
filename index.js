@@ -751,3 +751,70 @@ app.get("/api/video-positions/:userId", (req, res) => {
   // Return as array, not object
   res.json({ positions: userPositions });
 });
+
+// ============ CALENDAR REMINDERS ENDPOINTS ============
+
+// GET /api/reminders/:userId - Get all reminders for user
+app.get("/api/reminders/:userId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.reminders) data.reminders = [];
+  const userReminders = data.reminders.filter(r => r.userId === userId);
+  res.json({ reminders: userReminders });
+});
+
+// POST /api/reminders - Add or update a reminder
+app.post("/api/reminders", (req, res) => {
+  const { userId, eventId, eventName, eventDate, reminderSet } = req.body;
+  
+  if (!userId || !eventId) {
+    return res.status(400).json({ error: "userId and eventId required" });
+  }
+  
+  if (!data.reminders) data.reminders = [];
+  
+  const existingIndex = data.reminders.findIndex(r => r.userId === userId && r.eventId === eventId);
+  
+  if (reminderSet) {
+    // Add or update reminder
+    const reminderData = {
+      id: existingIndex !== -1 ? data.reminders[existingIndex].id : Date.now().toString(),
+      userId: parseInt(userId),
+      eventId,
+      eventName: eventName || null,
+      eventDate: eventDate || null,
+      reminderSet: true,
+      updatedAt: new Date().toISOString(),
+      createdAt: existingIndex !== -1 ? data.reminders[existingIndex].createdAt : new Date().toISOString()
+    };
+    
+    if (existingIndex !== -1) {
+      data.reminders[existingIndex] = reminderData;
+    } else {
+      data.reminders.push(reminderData);
+    }
+  } else {
+    // Remove reminder
+    if (existingIndex !== -1) {
+      data.reminders.splice(existingIndex, 1);
+    }
+  }
+  
+  saveData();
+  res.json({ success: true });
+});
+
+// DELETE /api/reminders/:userId/:eventId - Remove a reminder
+app.delete("/api/reminders/:userId/:eventId", (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { eventId } = req.params;
+  
+  if (!data.reminders) data.reminders = [];
+  
+  const index = data.reminders.findIndex(r => r.userId === userId && r.eventId === eventId);
+  if (index !== -1) {
+    data.reminders.splice(index, 1);
+    saveData();
+  }
+  
+  res.json({ success: true });
+});
