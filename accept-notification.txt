@@ -1,0 +1,14 @@
+// In POST /api/friends/accept, after saveData():
+const toUser = data.users.find(u => u.id === request.toUserId);
+if (toUser) {
+  addNotification(
+    request.fromUserId,
+    'friend_accept',
+    '✅ Friend Request Accepted',
+    `${toUser.name} accepted your friend request!`,
+    toUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    request.toUserId,
+    toUser.name
+  );
+  console.log(`📨 Notification sent to user ${request.fromUserId}: Request accepted by ${toUser.name}`);
+}
