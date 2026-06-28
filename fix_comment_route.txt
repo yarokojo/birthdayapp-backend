@@ -1,0 +1,35 @@
+app.post("/api/posts/:id/comments", (req, res) => {
+  const { id } = req.params;
+  const { userId, text, userName, userAvatar } = req.body;
+  console.log(`📝 Comment on post ${id}:`, req.body);
+  
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) {
+    console.log(`❌ Post not found: ${id}`);
+    return res.status(404).json({ error: "Post not found" });
+  }
+
+  const newComment = {
+    id: Date.now().toString(),
+    userId,
+    userName: userName || 'Anonymous',
+    userAvatar: userAvatar || 'https://randomuser.me/api/portraits/men/1.jpg',
+    text,
+    createdAt: new Date().toISOString(),
+    likes: 0
+  };
+  
+  if (!post.commentList) post.commentList = [];
+  post.commentList.push(newComment);
+  post.comments = (post.comments || 0) + 1;
+  
+  // ✅ Force save
+  saveData();
+  console.log(`✅ Comment added to post ${id}:`, newComment);
+
+  if (post.userId !== userId) {
+    const user = data.users.find(u => u.id === userId);
+    addNotification(post.userId, 'comment', '💬 New Comment', `${user?.name || 'Someone'} commented on your post`);
+  }
+  res.status(201).json(newComment);
+});
