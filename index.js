@@ -508,7 +508,7 @@ app.get("/api/video-positions/:userId", (req, res) => {
 });
 
 // ============================================================
-// ✅ FRIENDS ENDPOINTS - COMPLETE
+// ✅ FRIENDS ENDPOINTS
 // ============================================================
 
 app.get('/api/friends/list/:userId', (req, res) => {
@@ -848,13 +848,45 @@ app.post("/api/gifts/purchase", (req, res) => {
   res.json({ success: true, transaction, newBalance });
 });
 
-// ============ SEARCH ENDPOINTS ============
+// ============================================================
+// ✅ SEARCH ENDPOINT - FIXED (Case-insensitive, returns all users)
+// ============================================================
+
 app.get('/api/users/search', (req, res) => {
   const { q } = req.query;
-  if (!q || q.length < 2) return res.json([]);
-  const results = data.users.filter(user => user.name?.toLowerCase().includes(q.toLowerCase()) || user.username?.toLowerCase().includes(q.toLowerCase()))
-    .map(user => ({ id: user.id, name: user.name, username: user.username, profileImage: user.profileImage, birthDate: user.birthDate }));
-  res.json(results);
+  console.log(`🔍 Search query: "${q}"`);
+  console.log(`👥 Total users in database: ${data.users.length}`);
+  
+  // If no query, return all users (for testing)
+  if (!q || q.length === 0) {
+    console.log(`📋 Returning all ${data.users.length} users`);
+    const allUsers = data.users.map(user => ({
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      birthDate: user.birthDate || null
+    }));
+    return res.json(allUsers);
+  }
+  
+  // Case-insensitive search
+  const searchTerm = q.toLowerCase().trim();
+  const results = data.users.filter(user => {
+    const nameMatch = user.name?.toLowerCase().includes(searchTerm);
+    const usernameMatch = user.username?.toLowerCase().includes(searchTerm);
+    const emailMatch = user.email?.toLowerCase().includes(searchTerm);
+    return nameMatch || usernameMatch || emailMatch;
+  });
+  
+  console.log(`✅ Found ${results.length} users matching "${q}"`);
+  res.json(results.map(user => ({
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    birthDate: user.birthDate || null
+  })));
 });
 
 // ============ CALENDAR REMINDERS ENDPOINTS ============
