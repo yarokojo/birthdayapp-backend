@@ -99,7 +99,7 @@ const addToWallet = (userId, amount, giftName, fromName) => {
   return data.wallets[userId].balance;
 };
 
-// ✅ NOTIFICATION HELPER - Creates notifications for users
+// ✅ NOTIFICATION HELPER
 const addNotification = (userId, type, title, message, imageUrl = null, targetId = null, targetName = null, extraData = {}) => {
   console.log(`📨 Creating notification for user ${userId}: ${title}`);
   
@@ -207,10 +207,7 @@ app.post("/api/wallet/add-funds", (req, res) => {
   res.json({ success: true, newBalance });
 });
 
-// ============================================================
-// ✅ POST ENDPOINTS
-// ============================================================
-
+// ============ POST ENDPOINTS ============
 app.get("/api/posts", (req, res) => {
   const allPosts = data.posts || [];
   res.json(allPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
@@ -752,6 +749,22 @@ app.delete('/api/friends/:friendId', (req, res) => {
     if (index2 !== -1) data.friendships.splice(index2, 1);
     
     saveData();
+    
+    // ✅ ADD NOTIFICATION FOR UNFRIEND
+    const removedUser = data.users.find(u => u.id === friendId);
+    if (removedUser) {
+      addNotification(
+        userId,
+        'friend_removed',
+        '❌ Friend Removed',
+        `You removed ${removedUser.name} from your friends`,
+        removedUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        friendId,
+        removedUser.name
+      );
+      console.log(`📨 Notification sent to user ${userId}: Removed ${removedUser.name}`);
+    }
+    
     console.log(`  ✅ Unfriended ${friendId}`);
     res.json({ success: true });
   } catch (err) {
@@ -881,10 +894,7 @@ app.post("/api/gifts/purchase", (req, res) => {
   res.json({ success: true, transaction, newBalance });
 });
 
-// ============================================================
-// ✅ SEARCH ENDPOINT
-// ============================================================
-
+// ============ SEARCH ENDPOINT ============
 app.get('/api/users/search', (req, res) => {
   const { q } = req.query;
   console.log(`🔍 Search query: "${q}"`);
@@ -972,10 +982,7 @@ app.delete("/api/reminders/:userId/:eventId", (req, res) => {
   res.json({ success: true });
 });
 
-// ============================================================
-// ✅ PROFILE ENDPOINT
-// ============================================================
-
+// ============ PROFILE ENDPOINT ============
 app.get('/api/users/profile', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) {
@@ -1066,9 +1073,8 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`📢 Notifications: ${data.notifications.length}`);
   console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
 });
-// ============================================================
-// ✅ TEMPORARY: Reset Password Route
-// ============================================================
+
+// ============ TEMPORARY: Reset Password Route ============
 app.post('/api/admin/reset-password', (req, res) => {
   const { email, newPassword } = req.body;
   console.log(`🔑 Resetting password for: ${email}`);
@@ -1078,11 +1084,12 @@ app.post('/api/admin/reset-password', (req, res) => {
     return res.status(404).json({ error: 'User not found' });
   }
   
-  // Store plain text password (temporary fix)
   user.password = newPassword;
-  user.password_hash = newPassword; // Store as plain text temporarily
+  user.password_hash = newPassword;
   saveData();
   
   console.log(`✅ Password reset for ${email}`);
   res.json({ success: true, message: `Password reset for ${email}` });
 });
+
+console.log("✅ BACKEND index.js updated with full notification support!");
