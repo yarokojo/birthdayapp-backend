@@ -3,6 +3,7 @@ const cors = require("cors");
 const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -10,8 +11,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// ============ DATA STORAGE ============
-const DATA_FILE = '/tmp/birthdayapp_data.json';
+const DATA_FILE = path.join(__dirname, 'data.json');
 
 let data = {
   users: [],
@@ -29,6 +29,7 @@ let data = {
   bookmarks: [],
   videoPositions: [],
   seenStories: [],
+  reminders: [],
   companyAccount: {
     name: 'MeolCompany',
     accountNumber: '0596270302',
@@ -41,7 +42,7 @@ try {
   if (fs.existsSync(DATA_FILE)) {
     const saved = fs.readFileSync(DATA_FILE, 'utf8');
     data = JSON.parse(saved);
-    console.log(`📂 Loaded data: ${data.users.length} users`);
+    console.log(`📂 Loaded data: ${data.users.length} users, ${data.posts.length} posts`);
   }
 } catch (err) {
   console.log("Starting fresh");
@@ -140,7 +141,14 @@ app.post("/api/auth/register", (req, res) => {
   data.users.push(newUser);
   if (!data.wallets[newUser.id]) data.wallets[newUser.id] = { balance: 0, transactions: [] };
   saveData();
-  res.json({ token: "test-token-" + Date.now(), user: { id: newUser.id, email: newUser.email, name, username, birthDate: newUser.birthDate } });
+  
+  const token = jwt.sign(
+    { userId: newUser.id, email: newUser.email },
+    process.env.JWT_SECRET || 'your_jwt_secret_key',
+    { expiresIn: '7d' }
+  );
+  
+  res.json({ token, user: { id: newUser.id, email: newUser.email, name, username, birthDate: newUser.birthDate } });
 });
 
 app.post("/api/auth/login", (req, res) => {
@@ -148,7 +156,14 @@ app.post("/api/auth/login", (req, res) => {
   const normalizedEmail = email.toLowerCase();
   const user = data.users.find(u => u.email === normalizedEmail);
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
-  res.json({ token: "test-token-" + Date.now(), user: { id: user.id, email: user.email, name: user.name, username: user.username, birthDate: user.birthDate } });
+  
+  const token = jwt.sign(
+    { userId: user.id, email: user.email },
+    process.env.JWT_SECRET || 'your_jwt_secret_key',
+    { expiresIn: '7d' }
+  );
+  
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name, username: user.username, birthDate: user.birthDate } });
 });
 
 // ============ WALLET ENDPOINTS ============
@@ -185,34 +200,71 @@ app.post("/api/wallet/add-funds", (req, res) => {
   res.json({ success: true, newBalance });
 });
 
-// ============ POST ENDPOINTS ============
+// ============================================================
+// ✅ POST ENDPOINTS
+// ============================================================
+
 app.get("/api/posts", (req, res) => {
   const allPosts = data.posts || [];
   res.json(allPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 });
 
 app.post("/api/posts", (req, res) => {
-  const { userId, content, image, video } = req.body;
-  const user = data.users.find(u => u.id === userId);
-  if (!user) return res.status(404).json({ error: "User not found" });
+  const { content, image, video, location, celebrationType, celebrantName, isBirthday, music, hashtags } = req.body;
   
-  const newPost = {
-    id: Date.now().toString(),
-    userId,
-    content,
-    image: image || null,
-    video: video || null,
-    authorName: user.name,
-    authorHandle: user.username,
-    authorImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    likes: 0,
-    comments: 0,
-    createdAt: new Date().toISOString(),
-    commentList: []
-  };
-  data.posts.unshift(newPost);
-  saveData();
-  res.status(201).json(newPost);
+  console.log('📝 POST /api/posts');
+  console.log('  Location received:', location || 'None');
+  console.log('  Celebration Type:', celebrationType || 'None');
+  console.log('  Celebrant Name:', celebrantName || 'None');
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No authorization header' });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const user = data.users.find(u => u.id === decoded.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const newPost = {
+      id: Date.now().toString(),
+      userId: user.id,
+      content,
+      image: image || null,
+      video: video || null,
+      location: location || null,
+      celebrationType: celebrationType || 'general',
+      celebrantName: celebrantName || '',
+      isBirthday: isBirthday || celebrationType === 'birthday',
+      music: music || null,
+      hashtags: hashtags || [],
+      authorName: user.name,
+      authorHandle: user.username,
+      authorImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      likes: 0,
+      comments: 0,
+      reposts: 0,
+      views: 0,
+      createdAt: new Date().toISOString(),
+      commentList: []
+    };
+    
+    if (!data.posts) data.posts = [];
+    data.posts.unshift(newPost);
+    saveData();
+    
+    console.log(`  ✅ Post created by ${user.name}: ${newPost.id}`);
+    console.log(`  📍 Location saved: ${newPost.location || 'None'}`);
+    res.status(201).json(newPost);
+  } catch (err) {
+    console.error('  ❌ JWT verification error:', err.message);
+    return res.status(401).json({ error: 'Invalid token: ' + err.message });
+  }
 });
 
 app.delete("/api/posts/:id", (req, res) => {
@@ -301,58 +353,6 @@ app.delete("/api/posts/:postId/comments/:commentId", (req, res) => {
   post.comments = Math.max(0, (post.comments || 0) - 1);
   saveData();
   res.json({ success: true });
-});
-
-// ============ STORY ENDPOINTS ============
-app.get("/api/stories", (req, res) => {
-  const now = new Date();
-  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const activeStories = (data.stories || []).filter(s => new Date(s.createdAt) > twentyFourHoursAgo);
-  res.json(activeStories);
-});
-
-app.post("/api/stories", (req, res) => {
-  const { userId, contentUrl, isVideo } = req.body;
-  const user = data.users.find(u => u.id === userId);
-  if (!user) return res.status(404).json({ error: "User not found" });
-  
-  const newStory = {
-    id: Date.now().toString(),
-    userId,
-    userName: user.name,
-    userHandle: user.username,
-    userAvatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    contentUrl,
-    isVideo: isVideo || false,
-    viewers: 0,
-    createdAt: new Date().toISOString()
-  };
-  data.stories.unshift(newStory);
-  saveData();
-  res.status(201).json(newStory);
-});
-
-// ============ SEEN STORIES ENDPOINTS ============
-app.post("/api/stories/seen", (req, res) => {
-  const { userId, storyId } = req.body;
-  if (!userId || !storyId) {
-    return res.status(400).json({ error: "userId and storyId required" });
-  }
-  if (!data.seenStories) data.seenStories = [];
-  const existing = data.seenStories.find(s => s.userId === userId && s.storyId === storyId);
-  if (!existing) {
-    data.seenStories.push({ id: Date.now().toString(), userId: parseInt(userId), storyId, seenAt: new Date().toISOString() });
-    saveData();
-  }
-  res.json({ success: true });
-});
-
-app.get("/api/stories/seen/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.seenStories) data.seenStories = [];
-  const seenStories = data.seenStories.filter(s => s.userId === userId);
-  const seenStoryIds = seenStories.map(s => s.storyId);
-  res.json({ seenStoryIds });
 });
 
 // ============ BOOKMARK ENDPOINTS ============
@@ -507,53 +507,257 @@ app.get("/api/video-positions/:userId", (req, res) => {
   res.json({ positions: positionsMap });
 });
 
-// ============ FRIEND REQUEST ENDPOINTS ============
-app.post('/api/friends/request', (req, res) => {
-  const { fromUserId, toUserId } = req.body;
-  const existing = data.friendRequests.find(r => r.fromUserId === fromUserId && r.toUserId === toUserId && r.status === 'pending');
-  if (existing) return res.status(400).json({ error: 'Request already sent' });
-  
-  const newRequest = { id: Date.now().toString(), fromUserId: parseInt(fromUserId), toUserId: parseInt(toUserId), status: 'pending', createdAt: new Date().toISOString() };
-  data.friendRequests.push(newRequest);
-  saveData();
-  const fromUser = data.users.find(u => u.id === parseInt(fromUserId));
-  addNotification(toUserId, 'friend_request', '👋 Friend Request', `${fromUser?.name || 'Someone'} sent you a friend request`);
-  res.json({ success: true, request: newRequest });
-});
-
-app.post('/api/friends/accept', (req, res) => {
-  const { requestId, userId } = req.body;
-  const request = data.friendRequests.find(r => r.id === requestId);
-  if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.toUserId !== parseInt(userId)) return res.status(403).json({ error: 'Not authorized' });
-  
-  request.status = 'accepted';
-  data.friendships.push({ id: Date.now().toString(), userId: request.fromUserId, friendId: request.toUserId, createdAt: new Date().toISOString() });
-  data.friendships.push({ id: (Date.now() + 1).toString(), userId: request.toUserId, friendId: request.fromUserId, createdAt: new Date().toISOString() });
-  saveData();
-  const toUser = data.users.find(u => u.id === request.toUserId);
-  addNotification(request.fromUserId, 'friend_accept', '✅ Friend Request Accepted', `${toUser?.name || 'Someone'} accepted your friend request`);
-  res.json({ success: true });
-});
+// ============================================================
+// ✅ FRIENDS ENDPOINTS - COMPLETE
+// ============================================================
 
 app.get('/api/friends/list/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
+  console.log(`👥 GET /api/friends/list/${userId}`);
+  
   const friendships = data.friendships.filter(f => f.userId === userId);
-  const friends = friendships.map(f => {
-    const friend = data.users.find(u => u.id === f.friendId);
-    return friend ? { id: friend.id, name: friend.name, username: friend.username, profileImage: friend.profileImage, birthDate: friend.birthDate } : null;
-  }).filter(Boolean);
+  const friends = friendships
+    .map(f => {
+      const friend = data.users.find(u => u.id === f.friendId);
+      return friend ? { 
+        id: friend.id, 
+        name: friend.name, 
+        username: friend.username, 
+        profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        birthDate: friend.birthDate || null
+      } : null;
+    })
+    .filter(Boolean);
+  
+  console.log(`  ✅ Found ${friends.length} friends`);
   res.json({ friends });
 });
 
-app.get('/api/friends/requests/:userId', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const pending = data.friendRequests.filter(r => r.toUserId === userId && r.status === 'pending');
-  const withDetails = pending.map(req => {
-    const fromUser = data.users.find(u => u.id === req.fromUserId);
-    return { ...req, fromUser: fromUser ? { id: fromUser.id, name: fromUser.name, username: fromUser.username } : null };
-  });
-  res.json({ requests: withDetails });
+app.get('/api/friends/requests', (req, res) => {
+  console.log('📨 GET /api/friends/requests');
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No authorization header' });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const userId = decoded.userId;
+    
+    const pending = data.friendRequests.filter(r => r.toUserId === userId && r.status === 'pending');
+    const withDetails = pending.map(req => {
+      const fromUser = data.users.find(u => u.id === req.fromUserId);
+      return { 
+        ...req, 
+        fromUser: fromUser ? { 
+          id: fromUser.id, 
+          name: fromUser.name, 
+          username: fromUser.username,
+          profileImage: fromUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
+        } : null
+      };
+    });
+    
+    console.log(`  ✅ Found ${withDetails.length} pending requests`);
+    res.json({ requests: withDetails });
+  } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.post('/api/friends/request', (req, res) => {
+  const { toUserId } = req.body;
+  console.log(`📨 POST /api/friends/request to ${toUserId}`);
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No authorization header' });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const fromUserId = decoded.userId;
+    
+    if (fromUserId === toUserId) {
+      return res.status(400).json({ error: 'Cannot send request to yourself' });
+    }
+    
+    const existing = data.friendRequests.find(
+      r => r.fromUserId === fromUserId && r.toUserId === toUserId && r.status === 'pending'
+    );
+    if (existing) {
+      return res.status(400).json({ error: 'Request already sent' });
+    }
+    
+    const newRequest = { 
+      id: Date.now().toString(), 
+      fromUserId: parseInt(fromUserId), 
+      toUserId: parseInt(toUserId), 
+      status: 'pending', 
+      createdAt: new Date().toISOString() 
+    };
+    data.friendRequests.push(newRequest);
+    saveData();
+    
+    const fromUser = data.users.find(u => u.id === fromUserId);
+    addNotification(toUserId, 'friend_request', '👋 Friend Request', `${fromUser?.name || 'Someone'} sent you a friend request`);
+    
+    console.log(`  ✅ Request sent from ${fromUserId} to ${toUserId}`);
+    res.json({ success: true, request: newRequest });
+  } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.post('/api/friends/accept', (req, res) => {
+  const { requestId } = req.body;
+  console.log(`✅ POST /api/friends/accept ${requestId}`);
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No authorization header' });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const userId = decoded.userId;
+    
+    const request = data.friendRequests.find(r => r.id === requestId);
+    if (!request) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    if (request.toUserId !== userId) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    if (request.status !== 'pending') {
+      return res.status(400).json({ error: 'Request already processed' });
+    }
+    
+    request.status = 'accepted';
+    data.friendships.push({ 
+      id: Date.now().toString(), 
+      userId: request.fromUserId, 
+      friendId: request.toUserId, 
+      createdAt: new Date().toISOString() 
+    });
+    data.friendships.push({ 
+      id: (Date.now() + 1).toString(), 
+      userId: request.toUserId, 
+      friendId: request.fromUserId, 
+      createdAt: new Date().toISOString() 
+    });
+    saveData();
+    
+    const toUser = data.users.find(u => u.id === request.toUserId);
+    addNotification(request.fromUserId, 'friend_accept', '✅ Friend Request Accepted', `${toUser?.name || 'Someone'} accepted your friend request`);
+    
+    console.log(`  ✅ Request ${requestId} accepted`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.post('/api/friends/decline', (req, res) => {
+  const { requestId } = req.body;
+  console.log(`❌ POST /api/friends/decline ${requestId}`);
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No authorization header' });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const userId = decoded.userId;
+    
+    const request = data.friendRequests.find(r => r.id === requestId);
+    if (!request) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    if (request.toUserId !== userId) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    
+    request.status = 'declined';
+    saveData();
+    
+    console.log(`  ✅ Request ${requestId} declined`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.delete('/api/friends/:friendId', (req, res) => {
+  const friendId = parseInt(req.params.friendId);
+  console.log(`🗑️ DELETE /api/friends/${friendId}`);
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No authorization header' });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const userId = decoded.userId;
+    
+    const index1 = data.friendships.findIndex(f => f.userId === userId && f.friendId === friendId);
+    const index2 = data.friendships.findIndex(f => f.userId === friendId && f.friendId === userId);
+    
+    if (index1 !== -1) data.friendships.splice(index1, 1);
+    if (index2 !== -1) data.friendships.splice(index2, 1);
+    
+    saveData();
+    console.log(`  ✅ Unfriended ${friendId}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/api/friends/birthdays', (req, res) => {
+  console.log('🎂 GET /api/friends/birthdays');
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No authorization header' });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const userId = decoded.userId;
+    
+    const friendships = data.friendships.filter(f => f.userId === userId);
+    const friendIds = friendships.map(f => f.friendId);
+    const friendsWithBirthdays = data.users
+      .filter(u => friendIds.includes(u.id) && u.birthDate)
+      .map(friend => ({
+        id: friend.id,
+        name: friend.name,
+        username: friend.username,
+        birthDate: friend.birthDate,
+        avatar: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
+      }));
+    
+    console.log(`  ✅ Found ${friendsWithBirthdays.length} friends with birthdays`);
+    res.json({ friendsBirthdays: friendsWithBirthdays });
+  } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
 });
 
 // ============ BIRTHDAY ENDPOINTS ============
@@ -653,108 +857,7 @@ app.get('/api/users/search', (req, res) => {
   res.json(results);
 });
 
-// ============ ROOT ENDPOINT ============
-app.get("/", (req, res) => {
-  res.json({ message: "BirthdayApp API is running!" });
-});
-
-// ============ START SERVER ============
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`👥 Users: ${data.users.length}`);
-  console.log(`📢 Notifications: ${data.notifications.length}`);
-  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
-  console.log(`📚 Stories seen endpoint: /api/stories/seen/:userId`);
-});
-
-// ============ VIDEO POSITIONS ENDPOINTS ============
-app.get("/api/video-positions/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.videoPositions) data.videoPositions = [];
-  const userPositions = data.videoPositions.filter(v => v.userId === userId);
-  const positions = {};
-  userPositions.forEach(p => { positions[p.postId] = p.positionSeconds; });
-  res.json({ positions });
-});
-
-app.post("/api/video-position", (req, res) => {
-  const { userId, postId, positionSeconds } = req.body;
-  if (!userId || !postId) return res.status(400).json({ error: "Missing userId or postId" });
-  if (!data.videoPositions) data.videoPositions = [];
-  const existingIndex = data.videoPositions.findIndex(v => v.userId === userId && v.postId === postId);
-  if (existingIndex !== -1) {
-    data.videoPositions[existingIndex].positionSeconds = positionSeconds;
-    data.videoPositions[existingIndex].updatedAt = new Date().toISOString();
-  } else {
-    data.videoPositions.push({ id: Date.now().toString(), userId, postId, positionSeconds, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-  }
-  saveData();
-  res.json({ success: true });
-});
-
-// ============ SEEN STORIES ENDPOINTS ============
-app.get("/api/stories/seen/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.seenStories) data.seenStories = [];
-  const seen = data.seenStories.filter(s => s.userId === userId).map(s => s.storyId);
-  res.json({ seenStoryIds: seen });
-});
-
-app.post("/api/stories/seen", (req, res) => {
-  const { userId, storyId } = req.body;
-  if (!userId || !storyId) return res.status(400).json({ error: "Missing userId or storyId" });
-  if (!data.seenStories) data.seenStories = [];
-  const exists = data.seenStories.some(s => s.userId === userId && s.storyId === storyId);
-  if (!exists) {
-    data.seenStories.push({ id: Date.now().toString(), userId, storyId, seenAt: new Date().toISOString() });
-    saveData();
-  }
-  res.json({ success: true });
-});
-
-// ============ FOLLOWING ENDPOINTS ============
-app.get("/api/users/:userId/following", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.follows) data.follows = [];
-  const following = data.follows.filter(f => f.followerId === userId);
-  const result = following.map(f => {
-    const user = data.users.find(u => u.id === f.followingId);
-    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
-  }).filter(Boolean);
-  res.json({ following: result });
-});
-
-app.get("/api/users/:userId/followers", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.follows) data.follows = [];
-  const followers = data.follows.filter(f => f.followingId === userId);
-  const result = followers.map(f => {
-    const user = data.users.find(u => u.id === f.followerId);
-    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
-  }).filter(Boolean);
-  res.json({ followers: result });
-});
-
-app.get("/api/users/:userId/is-following/:targetId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const targetId = parseInt(req.params.targetId);
-  if (!data.follows) data.follows = [];
-  const isFollowing = data.follows.some(f => f.followerId === userId && f.followingId === targetId);
-  res.json({ isFollowing });
-});
-
-// ============ VIDEO POSITIONS ENDPOINTS (FIXED) ============
-app.get("/api/video-positions/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.videoPositions) data.videoPositions = [];
-  const userPositions = data.videoPositions.filter(v => v.userId === userId);
-  // Return as array, not object
-  res.json({ positions: userPositions });
-});
-
 // ============ CALENDAR REMINDERS ENDPOINTS ============
-
-// GET /api/reminders/:userId - Get all reminders for user
 app.get("/api/reminders/:userId", (req, res) => {
   const userId = parseInt(req.params.userId);
   if (!data.reminders) data.reminders = [];
@@ -762,20 +865,14 @@ app.get("/api/reminders/:userId", (req, res) => {
   res.json({ reminders: userReminders });
 });
 
-// POST /api/reminders - Add or update a reminder
 app.post("/api/reminders", (req, res) => {
   const { userId, eventId, eventName, eventDate, reminderSet } = req.body;
-  
   if (!userId || !eventId) {
     return res.status(400).json({ error: "userId and eventId required" });
   }
-  
   if (!data.reminders) data.reminders = [];
-  
   const existingIndex = data.reminders.findIndex(r => r.userId === userId && r.eventId === eventId);
-  
   if (reminderSet) {
-    // Add or update reminder
     const reminderData = {
       id: existingIndex !== -1 ? data.reminders[existingIndex].id : Date.now().toString(),
       userId: parseInt(userId),
@@ -786,35 +883,123 @@ app.post("/api/reminders", (req, res) => {
       updatedAt: new Date().toISOString(),
       createdAt: existingIndex !== -1 ? data.reminders[existingIndex].createdAt : new Date().toISOString()
     };
-    
     if (existingIndex !== -1) {
       data.reminders[existingIndex] = reminderData;
     } else {
       data.reminders.push(reminderData);
     }
   } else {
-    // Remove reminder
     if (existingIndex !== -1) {
       data.reminders.splice(existingIndex, 1);
     }
   }
-  
   saveData();
   res.json({ success: true });
 });
 
-// DELETE /api/reminders/:userId/:eventId - Remove a reminder
 app.delete("/api/reminders/:userId/:eventId", (req, res) => {
   const userId = parseInt(req.params.userId);
   const { eventId } = req.params;
-  
   if (!data.reminders) data.reminders = [];
-  
   const index = data.reminders.findIndex(r => r.userId === userId && r.eventId === eventId);
   if (index !== -1) {
     data.reminders.splice(index, 1);
     saveData();
   }
-  
   res.json({ success: true });
+});
+
+// ============================================================
+// ✅ PROFILE ENDPOINT
+// ============================================================
+
+app.get('/api/users/profile', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const user = data.users.find(u => u.id === decoded.userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      username: user.username,
+      bio: user.bio || '',
+      location: user.location || '',
+      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      birthDate: user.birthDate || null,
+      createdAt: user.created_at
+    });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.put('/api/users/profile', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const userIndex = data.users.findIndex(u => u.id === decoded.userId);
+    
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const { name, bio, location, username, profileImage } = req.body;
+    if (name) data.users[userIndex].name = name;
+    if (bio) data.users[userIndex].bio = bio;
+    if (location) data.users[userIndex].location = location;
+    if (username) data.users[userIndex].username = username;
+    if (profileImage) data.users[userIndex].profileImage = profileImage;
+    
+    saveData();
+    
+    res.json({
+      id: data.users[userIndex].id,
+      name: data.users[userIndex].name,
+      email: data.users[userIndex].email,
+      username: data.users[userIndex].username,
+      bio: data.users[userIndex].bio || '',
+      location: data.users[userIndex].location || '',
+      profileImage: data.users[userIndex].profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      birthDate: data.users[userIndex].birthDate || null
+    });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// ============ COMPANY FEE ENDPOINTS ============
+app.get("/api/company/fees", (req, res) => {
+  res.json({ 
+    companyAccount: data.companyAccount, 
+    totalFees: data.companyAccount.totalFees, 
+    transactions: data.companyFees 
+  });
+});
+
+// ============ ROOT ENDPOINT ============
+app.get("/", (req, res) => {
+  res.json({ message: "BirthdayApp API is running!" });
+});
+
+// ============ START SERVER ============
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`👥 Users: ${data.users.length}`);
+  console.log(`📝 Posts: ${data.posts.length}`);
+  console.log(`📢 Notifications: ${data.notifications.length}`);
+  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
 });
