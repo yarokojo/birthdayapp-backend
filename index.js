@@ -1066,3 +1066,23 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`📢 Notifications: ${data.notifications.length}`);
   console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
 });
+// ============================================================
+// ✅ TEMPORARY: Reset Password Route
+// ============================================================
+app.post('/api/admin/reset-password', (req, res) => {
+  const { email, newPassword } = req.body;
+  console.log(`🔑 Resetting password for: ${email}`);
+  
+  const user = data.users.find(u => u.email === email);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  
+  // Store plain text password (temporary fix)
+  user.password = newPassword;
+  user.password_hash = newPassword; // Store as plain text temporarily
+  saveData();
+  
+  console.log(`✅ Password reset for ${email}`);
+  res.json({ success: true, message: `Password reset for ${email}` });
+});
