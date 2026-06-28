@@ -99,7 +99,10 @@ const addToWallet = (userId, amount, giftName, fromName) => {
   return data.wallets[userId].balance;
 };
 
+// ✅ NOTIFICATION HELPER - Creates notifications for users
 const addNotification = (userId, type, title, message, imageUrl = null, targetId = null, targetName = null, extraData = {}) => {
+  console.log(`📨 Creating notification for user ${userId}: ${title}`);
+  
   const newNotification = {
     id: Date.now().toString(),
     userId: parseInt(userId),
@@ -113,8 +116,12 @@ const addNotification = (userId, type, title, message, imageUrl = null, targetId
     isRead: false,
     createdAt: new Date().toISOString()
   };
+  
+  if (!data.notifications) data.notifications = [];
   data.notifications.unshift(newNotification);
   saveData();
+  
+  console.log(`✅ Notification created: ${newNotification.id}`);
   return newNotification;
 };
 
@@ -508,7 +515,7 @@ app.get("/api/video-positions/:userId", (req, res) => {
 });
 
 // ============================================================
-// ✅ FRIENDS ENDPOINTS
+// ✅ FRIENDS ENDPOINTS WITH NOTIFICATIONS
 // ============================================================
 
 app.get('/api/friends/list/:userId', (req, res) => {
@@ -568,6 +575,7 @@ app.get('/api/friends/requests', (req, res) => {
   }
 });
 
+// ✅ FRIEND REQUEST - WITH NOTIFICATION
 app.post('/api/friends/request', (req, res) => {
   const { toUserId } = req.body;
   console.log(`📨 POST /api/friends/request to ${toUserId}`);
@@ -603,8 +611,20 @@ app.post('/api/friends/request', (req, res) => {
     data.friendRequests.push(newRequest);
     saveData();
     
+    // ✅ ADD NOTIFICATION FOR FRIEND REQUEST
     const fromUser = data.users.find(u => u.id === fromUserId);
-    addNotification(toUserId, 'friend_request', '👋 Friend Request', `${fromUser?.name || 'Someone'} sent you a friend request`);
+    if (fromUser) {
+      addNotification(
+        toUserId,
+        'friend_request',
+        '👋 Friend Request',
+        `${fromUser.name} sent you a friend request!`,
+        fromUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        fromUserId,
+        fromUser.name
+      );
+      console.log(`📨 Notification sent to user ${toUserId}: Friend request from ${fromUser.name}`);
+    }
     
     console.log(`  ✅ Request sent from ${fromUserId} to ${toUserId}`);
     res.json({ success: true, request: newRequest });
@@ -614,6 +634,7 @@ app.post('/api/friends/request', (req, res) => {
   }
 });
 
+// ✅ ACCEPT FRIEND REQUEST - WITH NOTIFICATION
 app.post('/api/friends/accept', (req, res) => {
   const { requestId } = req.body;
   console.log(`✅ POST /api/friends/accept ${requestId}`);
@@ -654,8 +675,20 @@ app.post('/api/friends/accept', (req, res) => {
     });
     saveData();
     
+    // ✅ ADD NOTIFICATION FOR ACCEPTED REQUEST
     const toUser = data.users.find(u => u.id === request.toUserId);
-    addNotification(request.fromUserId, 'friend_accept', '✅ Friend Request Accepted', `${toUser?.name || 'Someone'} accepted your friend request`);
+    if (toUser) {
+      addNotification(
+        request.fromUserId,
+        'friend_accept',
+        '✅ Friend Request Accepted',
+        `${toUser.name} accepted your friend request!`,
+        toUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        request.toUserId,
+        toUser.name
+      );
+      console.log(`📨 Notification sent to user ${request.fromUserId}: Request accepted by ${toUser.name}`);
+    }
     
     console.log(`  ✅ Request ${requestId} accepted`);
     res.json({ success: true });
@@ -849,7 +882,7 @@ app.post("/api/gifts/purchase", (req, res) => {
 });
 
 // ============================================================
-// ✅ SEARCH ENDPOINT - FIXED (Case-insensitive, returns all users)
+// ✅ SEARCH ENDPOINT
 // ============================================================
 
 app.get('/api/users/search', (req, res) => {
@@ -857,7 +890,6 @@ app.get('/api/users/search', (req, res) => {
   console.log(`🔍 Search query: "${q}"`);
   console.log(`👥 Total users in database: ${data.users.length}`);
   
-  // If no query, return all users (for testing)
   if (!q || q.length === 0) {
     console.log(`📋 Returning all ${data.users.length} users`);
     const allUsers = data.users.map(user => ({
@@ -870,7 +902,6 @@ app.get('/api/users/search', (req, res) => {
     return res.json(allUsers);
   }
   
-  // Case-insensitive search
   const searchTerm = q.toLowerCase().trim();
   const results = data.users.filter(user => {
     const nameMatch = user.name?.toLowerCase().includes(searchTerm);
