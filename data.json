@@ -68,7 +68,10 @@
       "celebrantName": "Yaro Edward Kojo",
       "isBirthday": true,
       "music": "🎵 Happy Birthday Song",
-      "hashtags": ["#birthday", "#celebration"],
+      "hashtags": [
+        "#birthday",
+        "#celebration"
+      ],
       "authorName": "Yaro Edward Kojo",
       "authorHandle": "@yarokojo",
       "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
@@ -99,7 +102,10 @@
       "celebrantName": "John Doe",
       "isBirthday": true,
       "music": null,
-      "hashtags": ["#birthday", "#john"],
+      "hashtags": [
+        "#birthday",
+        "#john"
+      ],
       "authorName": "John Doe",
       "authorHandle": "@johndoe",
       "authorImage": "https://randomuser.me/api/portraits/men/2.jpg",
@@ -121,7 +127,10 @@
       "celebrantName": "Sarah Johnson",
       "isBirthday": true,
       "music": "🎵 Celebration - Kool & The Gang",
-      "hashtags": ["#birthday", "#sarah"],
+      "hashtags": [
+        "#birthday",
+        "#sarah"
+      ],
       "authorName": "Sarah Johnson",
       "authorHandle": "@sarahj",
       "authorImage": "https://randomuser.me/api/portraits/women/1.jpg",
@@ -143,36 +152,83 @@
     }
   ],
   "friendships": [
-    { "id": "1", "userId": 1, "friendId": 2, "createdAt": "2026-06-20T10:00:00.000Z" },
-    { "id": "2", "userId": 2, "friendId": 1, "createdAt": "2026-06-20T10:00:00.000Z" },
-    { "id": "3", "userId": 1, "friendId": 3, "createdAt": "2026-06-21T14:30:00.000Z" },
-    { "id": "4", "userId": 3, "friendId": 1, "createdAt": "2026-06-21T14:30:00.000Z" },
-    { "id": "5", "userId": 1, "friendId": 4, "createdAt": "2026-06-22T10:00:00.000Z" },
-    { "id": "6", "userId": 4, "friendId": 1, "createdAt": "2026-06-22T10:00:00.000Z" },
-    { "id": "7", "userId": 1, "friendId": 5, "createdAt": "2026-06-23T14:00:00.000Z" },
-    { "id": "8", "userId": 5, "friendId": 1, "createdAt": "2026-06-23T14:00:00.000Z" }
+    {
+      "id": "1",
+      "userId": 1,
+      "friendId": 2,
+      "createdAt": "2026-06-20T10:00:00.000Z"
+    },
+    {
+      "id": "2",
+      "userId": 2,
+      "friendId": 1,
+      "createdAt": "2026-06-20T10:00:00.000Z"
+    },
+    {
+      "id": "3",
+      "userId": 1,
+      "friendId": 3,
+      "createdAt": "2026-06-21T14:30:00.000Z"
+    },
+    {
+      "id": "4",
+      "userId": 3,
+      "friendId": 1,
+      "createdAt": "2026-06-21T14:30:00.000Z"
+    },
+    {
+      "id": "5",
+      "userId": 1,
+      "friendId": 4,
+      "createdAt": "2026-06-22T10:00:00.000Z"
+    },
+    {
+      "id": "6",
+      "userId": 4,
+      "friendId": 1,
+      "createdAt": "2026-06-22T10:00:00.000Z"
+    },
+    {
+      "id": "7",
+      "userId": 1,
+      "friendId": 5,
+      "createdAt": "2026-06-23T14:00:00.000Z"
+    },
+    {
+      "id": "8",
+      "userId": 5,
+      "friendId": 1,
+      "createdAt": "2026-06-23T14:00:00.000Z"
+    }
   ],
   "wallets": {
-    "1": { 
-      "balance": 100.00, 
+    "1": {
+      "balance": 100,
       "transactions": [
-        { "id": "tx1", "type": "credit", "amount": 50, "giftName": "Gold Bar", "fromName": "John Doe", "date": "2026-06-28T10:00:00.000Z" }
+        {
+          "id": "tx1",
+          "type": "credit",
+          "amount": 50,
+          "giftName": "Gold Bar",
+          "fromName": "John Doe",
+          "date": "2026-06-28T10:00:00.000Z"
+        }
       ]
     },
-    "2": { 
-      "balance": 50.00, 
+    "2": {
+      "balance": 50,
       "transactions": []
     },
-    "3": { 
-      "balance": 75.00, 
+    "3": {
+      "balance": 75,
       "transactions": []
     },
-    "4": { 
-      "balance": 200.00, 
+    "4": {
+      "balance": 200,
       "transactions": []
     },
-    "5": { 
-      "balance": 150.00, 
+    "5": {
+      "balance": 150,
       "transactions": []
     }
   },
