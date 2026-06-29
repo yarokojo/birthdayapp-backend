@@ -143,6 +143,8 @@ app.post("/api/auth/register", (req, res) => {
     name, 
     username,
     birthDate: birthDate || null,
+    phone: req.body.phone || '',
+    network: req.body.network || '',
     created_at: new Date().toISOString() 
   };
   data.users.push(newUser);
@@ -236,7 +238,6 @@ app.put('/api/users/profile', (req, res) => {
     
     console.log('📝 Updating user:', { id: decoded.userId, name, phone, network });
     
-    // ✅ Update all fields
     if (name !== undefined) data.users[userIndex].name = name;
     if (bio !== undefined) data.users[userIndex].bio = bio;
     if (location !== undefined) data.users[userIndex].location = location;
@@ -268,6 +269,32 @@ app.put('/api/users/profile', (req, res) => {
     console.error('❌ Profile update error:', err);
     res.status(401).json({ error: 'Invalid token' });
   }
+});
+
+// ============ FRIENDS LIST - WITH PHONE NUMBER ============
+app.get('/api/friends/list/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  console.log(`👥 GET /api/friends/list/${userId}`);
+  
+  const friendships = data.friendships.filter(f => f.userId === userId);
+  const friends = friendships
+    .map(f => {
+      const friend = data.users.find(u => u.id === f.friendId);
+      if (!friend) return null;
+      return {
+        id: friend.id,
+        name: friend.name,
+        username: friend.username,
+        profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        birthDate: friend.birthDate || null,
+        phone: friend.phone || '',
+        network: friend.network || 'MTN'
+      };
+    })
+    .filter(Boolean);
+  
+  console.log(`  ✅ Found ${friends.length} friends with phone numbers`);
+  res.json({ friends });
 });
 
 // ============ WALLET ENDPOINTS ============
@@ -609,30 +636,6 @@ app.get("/api/video-positions/:userId", (req, res) => {
 });
 
 // ============ FRIENDS ENDPOINTS ============
-app.get('/api/friends/list/:userId', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  console.log(`👥 GET /api/friends/list/${userId}`);
-  
-  const friendships = data.friendships.filter(f => f.userId === userId);
-  const friends = friendships
-    .map(f => {
-      const friend = data.users.find(u => u.id === f.friendId);
-      return friend ? { 
-        id: friend.id, 
-        name: friend.name, 
-        username: friend.username, 
-        profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-        birthDate: friend.birthDate || null,
-        phone: friend.phone || '',
-        network: friend.network || ''
-      } : null;
-    })
-    .filter(Boolean);
-  
-  console.log(`  ✅ Found ${friends.length} friends`);
-  res.json({ friends });
-});
-
 app.get('/api/friends/requests', (req, res) => {
   console.log('📨 GET /api/friends/requests');
   
@@ -984,7 +987,9 @@ app.get('/api/users/search', (req, res) => {
       name: user.name,
       username: user.username,
       profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-      birthDate: user.birthDate || null
+      birthDate: user.birthDate || null,
+      phone: user.phone || '',
+      network: user.network || ''
     }));
     return res.json(allUsers);
   }
@@ -1003,7 +1008,9 @@ app.get('/api/users/search', (req, res) => {
     name: user.name,
     username: user.username,
     profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    birthDate: user.birthDate || null
+    birthDate: user.birthDate || null,
+    phone: user.phone || '',
+    network: user.network || ''
   })));
 });
 
@@ -1100,4 +1107,4 @@ app.post('/api/admin/reset-password', (req, res) => {
   res.json({ success: true, message: `Password reset for ${email}` });
 });
 
-console.log("✅ BACKEND index.js fully updated with PUT /api/users/profile route!");
+console.log("✅ BACKEND index.js updated with phone number support!");
