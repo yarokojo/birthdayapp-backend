@@ -332,9 +332,21 @@ app.post("/api/wallet/add-funds", (req, res) => {
 });
 
 // ============ POST ENDPOINTS ============
+// ✅ FIXED: GET /api/posts - INCLUDES PHONE AND NETWORK
 app.get("/api/posts", (req, res) => {
   const allPosts = data.posts || [];
-  res.json(allPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+  
+  // ✅ Enrich posts with author's phone and network
+  const enrichedPosts = allPosts.map(post => {
+    const author = data.users.find(u => u.id === post.userId);
+    return {
+      ...post,
+      phone: author?.phone || '',
+      network: author?.network || 'MTN',
+    };
+  });
+  
+  res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 });
 
 app.post("/api/posts", (req, res) => {
@@ -374,6 +386,8 @@ app.post("/api/posts", (req, res) => {
       authorName: user.name,
       authorHandle: user.username,
       authorImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      phone: user.phone || '',
+      network: user.network || 'MTN',
       likes: 0,
       comments: 0,
       reposts: 0,
