@@ -173,6 +173,103 @@ app.post("/api/auth/login", (req, res) => {
   res.json({ token, user: { id: user.id, email: user.email, name: user.name, username: user.username, birthDate: user.birthDate } });
 });
 
+// ============================================================
+// ✅ GET /api/users/profile
+// ============================================================
+app.get('/api/users/profile', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const user = data.users.find(u => u.id === decoded.userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      username: user.username,
+      bio: user.bio || '',
+      location: user.location || '',
+      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      birthDate: user.birthDate || null,
+      phone: user.phone || '',
+      network: user.network || '',
+      createdAt: user.created_at
+    });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// ============================================================
+// ✅ PUT /api/users/profile - UPDATE PROFILE
+// ============================================================
+app.put('/api/users/profile', (req, res) => {
+  console.log('📝 PUT /api/users/profile');
+  console.log('📝 Request body:', req.body);
+  
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    console.log('❌ No token provided');
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    console.log('👤 User ID from token:', decoded.userId);
+    
+    const userIndex = data.users.findIndex(u => u.id === decoded.userId);
+    
+    if (userIndex === -1) {
+      console.log('❌ User not found:', decoded.userId);
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const { name, bio, location, username, profileImage, phone, network, birthDate } = req.body;
+    
+    console.log('📝 Updating user:', { id: decoded.userId, name, phone, network });
+    
+    // ✅ Update all fields
+    if (name !== undefined) data.users[userIndex].name = name;
+    if (bio !== undefined) data.users[userIndex].bio = bio;
+    if (location !== undefined) data.users[userIndex].location = location;
+    if (username !== undefined) data.users[userIndex].username = username;
+    if (profileImage !== undefined) data.users[userIndex].profileImage = profileImage;
+    if (phone !== undefined) data.users[userIndex].phone = phone;
+    if (network !== undefined) data.users[userIndex].network = network;
+    if (birthDate !== undefined) data.users[userIndex].birthDate = birthDate;
+    
+    saveData();
+    
+    console.log('✅ Profile updated for user:', data.users[userIndex].id);
+    
+    const updatedUser = data.users[userIndex];
+    res.json({
+      id: updatedUser.id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      username: updatedUser.username,
+      bio: updatedUser.bio || '',
+      location: updatedUser.location || '',
+      profileImage: updatedUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      birthDate: updatedUser.birthDate || null,
+      phone: updatedUser.phone || '',
+      network: updatedUser.network || '',
+      createdAt: updatedUser.created_at
+    });
+  } catch (err) {
+    console.error('❌ Profile update error:', err);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
 // ============ WALLET ENDPOINTS ============
 app.get("/api/wallet/balance/:userId", (req, res) => {
   const balance = getWalletBalance(parseInt(req.params.userId));
@@ -511,10 +608,7 @@ app.get("/api/video-positions/:userId", (req, res) => {
   res.json({ positions: positionsMap });
 });
 
-// ============================================================
-// ✅ FRIENDS ENDPOINTS WITH NOTIFICATIONS
-// ============================================================
-
+// ============ FRIENDS ENDPOINTS ============
 app.get('/api/friends/list/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   console.log(`👥 GET /api/friends/list/${userId}`);
@@ -528,7 +622,9 @@ app.get('/api/friends/list/:userId', (req, res) => {
         name: friend.name, 
         username: friend.username, 
         profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-        birthDate: friend.birthDate || null
+        birthDate: friend.birthDate || null,
+        phone: friend.phone || '',
+        network: friend.network || ''
       } : null;
     })
     .filter(Boolean);
@@ -572,7 +668,6 @@ app.get('/api/friends/requests', (req, res) => {
   }
 });
 
-// ✅ FRIEND REQUEST - WITH NOTIFICATION
 app.post('/api/friends/request', (req, res) => {
   const { toUserId } = req.body;
   console.log(`📨 POST /api/friends/request to ${toUserId}`);
@@ -608,7 +703,6 @@ app.post('/api/friends/request', (req, res) => {
     data.friendRequests.push(newRequest);
     saveData();
     
-    // ✅ ADD NOTIFICATION FOR FRIEND REQUEST
     const fromUser = data.users.find(u => u.id === fromUserId);
     if (fromUser) {
       addNotification(
@@ -631,7 +725,6 @@ app.post('/api/friends/request', (req, res) => {
   }
 });
 
-// ✅ ACCEPT FRIEND REQUEST - WITH NOTIFICATION
 app.post('/api/friends/accept', (req, res) => {
   const { requestId } = req.body;
   console.log(`✅ POST /api/friends/accept ${requestId}`);
@@ -672,7 +765,6 @@ app.post('/api/friends/accept', (req, res) => {
     });
     saveData();
     
-    // ✅ ADD NOTIFICATION FOR ACCEPTED REQUEST
     const toUser = data.users.find(u => u.id === request.toUserId);
     if (toUser) {
       addNotification(
@@ -749,21 +841,6 @@ app.delete('/api/friends/:friendId', (req, res) => {
     if (index2 !== -1) data.friendships.splice(index2, 1);
     
     saveData();
-    
-    // ✅ ADD NOTIFICATION FOR UNFRIEND
-    const removedUser = data.users.find(u => u.id === friendId);
-    if (removedUser) {
-      addNotification(
-        userId,
-        'friend_removed',
-        '❌ Friend Removed',
-        `You removed ${removedUser.name} from your friends`,
-        removedUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-        friendId,
-        removedUser.name
-      );
-      console.log(`📨 Notification sent to user ${userId}: Removed ${removedUser.name}`);
-    }
     
     console.log(`  ✅ Unfriended ${friendId}`);
     res.json({ success: true });
@@ -982,75 +1059,6 @@ app.delete("/api/reminders/:userId/:eventId", (req, res) => {
   res.json({ success: true });
 });
 
-// ============ PROFILE ENDPOINT ============
-app.get('/api/users/profile', (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
-    const user = data.users.find(u => u.id === decoded.userId);
-    
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      username: user.username,
-      bio: user.bio || '',
-      location: user.location || '',
-      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-      birthDate: user.birthDate || null,
-      createdAt: user.created_at
-    });
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-app.put('/api/users/profile', (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
-    const userIndex = data.users.findIndex(u => u.id === decoded.userId);
-    
-    if (userIndex === -1) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    const { name, bio, location, username, profileImage } = req.body;
-    if (name) data.users[userIndex].name = name;
-    if (bio) data.users[userIndex].bio = bio;
-    if (location) data.users[userIndex].location = location;
-    if (username) data.users[userIndex].username = username;
-    if (profileImage) data.users[userIndex].profileImage = profileImage;
-    
-    saveData();
-    
-    res.json({
-      id: data.users[userIndex].id,
-      name: data.users[userIndex].name,
-      email: data.users[userIndex].email,
-      username: data.users[userIndex].username,
-      bio: data.users[userIndex].bio || '',
-      location: data.users[userIndex].location || '',
-      profileImage: data.users[userIndex].profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-      birthDate: data.users[userIndex].birthDate || null
-    });
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
 // ============ COMPANY FEE ENDPOINTS ============
 app.get("/api/company/fees", (req, res) => {
   res.json({ 
@@ -1092,4 +1100,4 @@ app.post('/api/admin/reset-password', (req, res) => {
   res.json({ success: true, message: `Password reset for ${email}` });
 });
 
-console.log("✅ BACKEND index.js updated with full notification support!");
+console.log("✅ BACKEND index.js updated with PUT /api/users/profile route!");
