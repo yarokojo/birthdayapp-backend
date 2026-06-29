@@ -99,6 +99,36 @@ const addToWallet = (userId, amount, giftName, fromName) => {
   return data.wallets[userId].balance;
 };
 
+const deductFromWallet = (userId, amount, description) => {
+  if (!data.wallets[userId]) data.wallets[userId] = { balance: 0, transactions: [] };
+  if (data.wallets[userId].balance < amount) {
+    return { success: false, error: 'Insufficient balance' };
+  }
+  data.wallets[userId].balance -= amount;
+  data.wallets[userId].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'debit',
+    amount,
+    description,
+    date: new Date().toISOString()
+  });
+  saveData();
+  return { success: true, newBalance: data.wallets[userId].balance };
+};
+
+const recordTransaction = (userId, type, amount, description, referenceId = null) => {
+  if (!data.wallets[userId]) data.wallets[userId] = { balance: 0, transactions: [] };
+  data.wallets[userId].transactions.unshift({
+    id: Date.now().toString(),
+    type,
+    amount,
+    description,
+    referenceId,
+    date: new Date().toISOString()
+  });
+  saveData();
+};
+
 // ✅ NOTIFICATION HELPER
 const addNotification = (userId, type, title, message, imageUrl = null, targetId = null, targetName = null, extraData = {}) => {
   console.log(`📨 Creating notification for user ${userId}: ${title}`);
@@ -148,7 +178,9 @@ app.post("/api/auth/register", (req, res) => {
     created_at: new Date().toISOString() 
   };
   data.users.push(newUser);
-  if (!data.wallets[newUser.id]) data.wallets[newUser.id] = { balance: 0, transactions: [] };
+  
+  // ✅ Create wallet for new user
+  data.wallets[newUser.id] = { balance: 0, transactions: [] };
   saveData();
   
   const token = jwt.sign(
@@ -298,41 +330,161 @@ app.get('/api/friends/list/:userId', (req, res) => {
 });
 
 // ============ WALLET ENDPOINTS ============
-app.get("/api/wallet/balance/:userId", (req, res) => {
-  const balance = getWalletBalance(parseInt(req.params.userId));
+// ✅ GET /api/wallet/:userId - Get wallet balance and transactions
+app.get('/api/wallet/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const wallet = data.wallets[userId];
+  
+  if (!wallet) {
+    // Create wallet if it doesn't exist
+    data.wallets[userId] = { balance: 0, transactions: [] };
+    saveData();
+    return res.json({ balance: 0, transactions: [] });
+  }
+  
+  res.json({
+    balance: wallet.balance || 0,
+    transactions: wallet.transactions || []
+  });
+});
+
+// ✅ GET /api/wallet/balance/:userId - Get balance only
+app.get('/api/wallet/balance/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const balance = getWalletBalance(userId);
   res.json({ balance, currency: 'GHS' });
 });
 
-app.get("/api/wallet/transactions/:userId", (req, res) => {
-  const wallet = data.wallets[parseInt(req.params.userId)];
-  res.json({ balance: wallet?.balance || 0, transactions: wallet?.transactions || [] });
-});
-
-app.post("/api/wallet/add-gift", (req, res) => {
-  const { celebrantId, celebrantName, giftAmount, giftName, fromName } = req.body;
-  const amount = parseFloat(giftAmount);
-  const senderName = fromName || 'Someone';
-  const newBalance = addToWallet(celebrantId, amount, giftName, senderName);
-  data.giftTransactions.unshift({ id: Date.now().toString(), celebrantId, celebrantName, giftName, giftAmount: amount, fromName: senderName, date: new Date().toISOString() });
+// ✅ POST /api/wallet/add-funds - Add funds to wallet (for gifts)
+app.post('/api/wallet/add-funds', (req, res) => {
+  const { userId, amount, description, referenceId } = req.body;
+  const userIdNum = parseInt(userId);
+  
+  if (!userId || !amount) {
+    return res.status(400).json({ error: 'userId and amount required' });
+  }
+  
+  if (!data.wallets[userIdNum]) {
+    data.wallets[userIdNum] = { balance: 0, transactions: [] };
+  }
+  
+  const newBalance = data.wallets[userIdNum].balance + parseFloat(amount);
+  data.wallets[userIdNum].balance = newBalance;
+  data.wallets[userIdNum].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'credit',
+    amount: parseFloat(amount),
+    description: description || 'Funds added',
+    referenceId: referenceId || null,
+    date: new Date().toISOString()
+  });
   saveData();
-  addNotification(celebrantId, 'gift', '🎁 Gift Received', `${senderName} sent you ${giftName} worth ₵${amount}!`);
+  
+  console.log(`💰 Added ₵${amount} to wallet for user ${userId}`);
   res.json({ success: true, newBalance });
 });
 
-app.get("/api/wallet/:userId", (req, res) => {
+// ✅ POST /api/wallet/deduct-funds - Deduct from wallet
+app.post('/api/wallet/deduct-funds', (req, res) => {
+  const { userId, amount, description } = req.body;
+  const userIdNum = parseInt(userId);
+  
+  if (!userId || !amount) {
+    return res.status(400).json({ error: 'userId and amount required' });
+  }
+  
+  if (!data.wallets[userIdNum]) {
+    data.wallets[userIdNum] = { balance: 0, transactions: [] };
+  }
+  
+  if (data.wallets[userIdNum].balance < parseFloat(amount)) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+  
+  const newBalance = data.wallets[userIdNum].balance - parseFloat(amount);
+  data.wallets[userIdNum].balance = newBalance;
+  data.wallets[userIdNum].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'debit',
+    amount: parseFloat(amount),
+    description: description || 'Funds deducted',
+    date: new Date().toISOString()
+  });
+  saveData();
+  
+  console.log(`💰 Deducted ₵${amount} from wallet for user ${userId}`);
+  res.json({ success: true, newBalance });
+});
+
+// ✅ POST /api/wallet/withdraw - Withdraw to MoMo (1% fee)
+app.post('/api/wallet/withdraw', (req, res) => {
+  const { userId, amount, network, phoneNumber } = req.body;
+  const userIdNum = parseInt(userId);
+  
+  if (!userId || !amount || !network || !phoneNumber) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const amountNum = parseFloat(amount);
+  const fee = amountNum * 0.01;
+  const totalDeduction = amountNum + fee;
+  
+  if (!data.wallets[userIdNum]) {
+    return res.status(400).json({ error: 'Wallet not found' });
+  }
+  
+  if (data.wallets[userIdNum].balance < totalDeduction) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+  
+  // Deduct amount + fee
+  data.wallets[userIdNum].balance -= totalDeduction;
+  data.wallets[userIdNum].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'withdrawal',
+    amount: amountNum,
+    fee: fee,
+    network,
+    phoneNumber,
+    description: `Withdrawal to ${network}`,
+    date: new Date().toISOString()
+  });
+  
+  // Record fee to company
+  data.companyFees.unshift({
+    id: Date.now().toString(),
+    amount: fee,
+    fromUserId: userIdNum,
+    withdrawalAmount: amountNum,
+    date: new Date().toISOString()
+  });
+  data.companyAccount.totalFees += fee;
+  saveData();
+  
+  console.log(`💰 Withdrawal: ₵${amount} to ${network} • ${phoneNumber}, Fee: ₵${fee}`);
+  res.json({
+    success: true,
+    amount: amountNum,
+    fee: fee,
+    userReceives: amountNum - fee,
+    newBalance: data.wallets[userIdNum].balance
+  });
+});
+
+// ✅ GET /api/wallet/transactions/:userId - Get all transactions
+app.get('/api/wallet/transactions/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const wallet = data.wallets[userId];
-  res.json({ balance: wallet?.balance || 0, transactions: wallet?.transactions || [] });
-});
-
-app.post("/api/wallet/add-funds", (req, res) => {
-  const { userId, amount, giftName, fromName } = req.body;
-  const newBalance = addToWallet(userId, parseFloat(amount), giftName, fromName);
-  res.json({ success: true, newBalance });
+  
+  if (!wallet) {
+    return res.json({ transactions: [] });
+  }
+  
+  res.json({ transactions: wallet.transactions || [] });
 });
 
 // ============ POST ENDPOINTS ============
-// ✅ FIXED: GET /api/posts - INCLUDES PHONE AND NETWORK
+// ✅ GET /api/posts - INCLUDES PHONE AND NETWORK
 app.get("/api/posts", (req, res) => {
   const allPosts = data.posts || [];
   
@@ -1103,22 +1255,4 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
 });
 
-// ============ TEMPORARY: Reset Password Route ============
-app.post('/api/admin/reset-password', (req, res) => {
-  const { email, newPassword } = req.body;
-  console.log(`🔑 Resetting password for: ${email}`);
-  
-  const user = data.users.find(u => u.email === email);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-  
-  user.password = newPassword;
-  user.password_hash = newPassword;
-  saveData();
-  
-  console.log(`✅ Password reset for ${email}`);
-  res.json({ success: true, message: `Password reset for ${email}` });
-});
-
-console.log("✅ BACKEND index.js updated with phone number support!");
+console.log("✅ BACKEND index.js updated with wallet endpoints!");
