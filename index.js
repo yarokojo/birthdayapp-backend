@@ -1100,4 +1100,4 @@ app.post('/api/admin/reset-password', (req, res) => {
   res.json({ success: true, message: `Password reset for ${email}` });
 });
 
-console.log("✅ BACKEND index.js updated with PUT /api/users/profile route!");
+console.log("✅ BACKEND index.js fully updated with PUT /api/users/profile route!");
