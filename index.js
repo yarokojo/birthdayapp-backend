@@ -2303,3 +2303,25 @@ app.get('/api/users/:userId/stats', (req, res) => {
 });
 
 console.log('✅ Follow, Gift History, and Stats endpoints added!');
+
+// ============================================================
+// ✅ JWT VERIFICATION MIDDLEWARE
+// ============================================================
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    req.userId = decoded.userId;
+    next();
+  } catch (err) {
+    console.error('❌ Invalid token:', err.message);
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+// ============================================================
+// ✅ JWT VERIFICATION MIDDLEWARE
+// ============================================================
