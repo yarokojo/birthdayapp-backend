@@ -203,8 +203,18 @@
   ],
   "wallets": {
     "1": {
-      "balance": 100,
+      "balance": 89.9,
       "transactions": [
+        {
+          "id": "1782745902064",
+          "type": "withdrawal",
+          "amount": 10,
+          "fee": 0.1,
+          "network": "MTN",
+          "phoneNumber": "0244123456",
+          "description": "Withdrawal to MTN",
+          "date": "2026-06-29T15:11:42.064Z"
+        },
         {
           "id": "tx1",
           "type": "credit",
@@ -253,12 +263,20 @@
   "bookmarks": [],
   "videoPositions": [],
   "seenStories": [],
-  "companyFees": [],
+  "companyFees": [
+    {
+      "id": "1782745902064",
+      "amount": 0.1,
+      "fromUserId": 1,
+      "withdrawalAmount": 10,
+      "date": "2026-06-29T15:11:42.064Z"
+    }
+  ],
   "giftTransactions": [],
   "companyAccount": {
     "name": "MeolCompany",
     "accountNumber": "0596270302",
     "network": "MTN",
-    "totalFees": 0
+    "totalFees": 0.1
   }
 }

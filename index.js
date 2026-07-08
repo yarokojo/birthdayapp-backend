@@ -1256,3 +1256,58 @@ app.listen(PORT, "0.0.0.0", () => {
 });
 
 console.log("✅ BACKEND index.js updated with wallet endpoints!");
+
+// ============ WITHDRAWAL ENDPOINT ============
+app.post('/api/wallet/withdraw', (req, res) => {
+  const { userId, amount, network, phoneNumber } = req.body;
+  const userIdNum = parseInt(userId);
+  
+  if (!userId || !amount || !network || !phoneNumber) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const amountNum = parseFloat(amount);
+  const fee = amountNum * 0.01;
+  const totalDeduction = amountNum + fee;
+  
+  if (!data.wallets[userIdNum]) {
+    return res.status(400).json({ error: 'Wallet not found' });
+  }
+  
+  if (data.wallets[userIdNum].balance < totalDeduction) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+  
+  // Deduct amount + fee
+  data.wallets[userIdNum].balance -= totalDeduction;
+  data.wallets[userIdNum].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'withdrawal',
+    amount: amountNum,
+    fee: fee,
+    network,
+    phoneNumber,
+    description: `Withdrawal to ${network}`,
+    date: new Date().toISOString()
+  });
+  
+  // Record fee to company
+  data.companyFees.unshift({
+    id: Date.now().toString(),
+    amount: fee,
+    fromUserId: userIdNum,
+    withdrawalAmount: amountNum,
+    date: new Date().toISOString()
+  });
+  data.companyAccount.totalFees += fee;
+  saveData();
+  
+  console.log(`💰 Withdrawal: ₵${amount} to ${network} • ${phoneNumber}, Fee: ₵${fee}`);
+  res.json({
+    success: true,
+    amount: amountNum,
+    fee: fee,
+    userReceives: amountNum - fee,
+    newBalance: data.wallets[userIdNum].balance
+  });
+});
