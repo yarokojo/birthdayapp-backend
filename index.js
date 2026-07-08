@@ -1673,3 +1673,128 @@ app.post('/api/group-gifts/:id/contribute', (req, res) => {
 });
 
 console.log('✅ Group Gift real-time updates added!');
+
+// ============================================================
+// ✅ CALENDAR EVENTS ENDPOINTS
+// ============================================================
+
+// GET /api/calendar/events/:userId - Get all events for a user
+app.get('/api/calendar/events/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.calendarEvents) {
+    data.calendarEvents = {};
+    saveData();
+  }
+  
+  if (!data.calendarEvents[userId]) {
+    data.calendarEvents[userId] = [];
+  }
+  
+  // Sort events by date
+  const events = data.calendarEvents[userId].sort((a, b) => a.date.localeCompare(b.date));
+  
+  res.json({ events });
+});
+
+// POST /api/calendar/events - Add a new event
+app.post('/api/calendar/events', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { title, date, type, celebrantName, celebrantId, reminderSet } = req.body;
+  
+  if (!title || !date) {
+    return res.status(400).json({ error: 'Title and date are required' });
+  }
+  
+  if (!data.calendarEvents) {
+    data.calendarEvents = {};
+  }
+  
+  if (!data.calendarEvents[userId]) {
+    data.calendarEvents[userId] = [];
+  }
+  
+  const newEvent = {
+    id: Date.now().toString(),
+    title,
+    date,
+    type: type || 'reminder',
+    celebrantName: celebrantName || null,
+    celebrantId: celebrantId || null,
+    userId,
+    reminderSet: reminderSet || false,
+    createdAt: new Date().toISOString()
+  };
+  
+  data.calendarEvents[userId].push(newEvent);
+  saveData();
+  
+  console.log(`📅 Event added for user ${userId}: ${title}`);
+  res.status(201).json({ success: true, event: newEvent });
+});
+
+// PUT /api/calendar/events/:id/reminder - Toggle reminder
+app.put('/api/calendar/events/:id/reminder', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const eventId = req.params.id;
+  
+  if (!data.calendarEvents) {
+    data.calendarEvents = {};
+  }
+  
+  if (!data.calendarEvents[userId]) {
+    data.calendarEvents[userId] = [];
+  }
+  
+  const eventIndex = data.calendarEvents[userId].findIndex(e => e.id === eventId);
+  if (eventIndex === -1) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+  
+  data.calendarEvents[userId][eventIndex].reminderSet = !data.calendarEvents[userId][eventIndex].reminderSet;
+  saveData();
+  
+  const updated = data.calendarEvents[userId][eventIndex];
+  
+  // Send notification if reminder is set
+  if (updated.reminderSet) {
+    addNotification(
+      userId,
+      'reminder',
+      '🔔 Reminder Set',
+      `Reminder set for: ${updated.title} on ${updated.date}`,
+      null,
+      eventId,
+      updated.celebrantName || null
+    );
+  }
+  
+  res.json({ success: true, event: updated });
+});
+
+// DELETE /api/calendar/events/:id - Delete an event
+app.delete('/api/calendar/events/:id', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const eventId = req.params.id;
+  
+  if (!data.calendarEvents) {
+    data.calendarEvents = {};
+  }
+  
+  if (!data.calendarEvents[userId]) {
+    data.calendarEvents[userId] = [];
+  }
+  
+  const eventIndex = data.calendarEvents[userId].findIndex(e => e.id === eventId);
+  if (eventIndex === -1) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+  
+  data.calendarEvents[userId].splice(eventIndex, 1);
+  saveData();
+  
+  console.log(`📅 Event deleted for user ${userId}: ${eventId}`);
+  res.json({ success: true });
+});
+
+console.log('✅ Calendar events endpoints added!');
