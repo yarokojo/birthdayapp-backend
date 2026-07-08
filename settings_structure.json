@@ -1,0 +1,26 @@
+{
+  "userSettings": {
+    "1": {
+      "theme": {
+        "darkMode": false,
+        "primaryColor": "#6366f1"
+      },
+      "privacy": {
+        "birthdayVisibility": "friends",
+        "postVisibility": "friends",
+        "allowWishes": "everyone",
+        "allowTagging": "friends"
+      },
+      "notifications": {
+        "enabled": true,
+        "birthdayReminders": true,
+        "friendRequests": true,
+        "giftNotifications": true,
+        "commentNotifications": true
+      }
+    }
+  },
+  "blockedUsers": {
+    "1": ["3", "5"]  // User 1 has blocked users 3 and 5
+  }
+}
