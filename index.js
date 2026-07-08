@@ -1931,3 +1931,21 @@ app.delete('/api/calendar/events/:id', verifyToken, (req, res) => {
 });
 
 console.log('✅ Calendar events endpoints added!');
+
+// GET /api/calendar/events/me - Get all events for the current user (frontend-friendly)
+app.get('/api/calendar/events/me', verifyToken, (req, res) => {
+  const userId = req.userId;
+  
+  if (!data.calendarEvents) {
+    data.calendarEvents = {};
+    saveData();
+  }
+  
+  if (!data.calendarEvents[userId]) {
+    data.calendarEvents[userId] = [];
+  }
+  
+  const events = data.calendarEvents[userId].sort((a, b) => a.date.localeCompare(b.date));
+  
+  res.json({ events });
+});
