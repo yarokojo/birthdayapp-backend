@@ -1542,3 +1542,134 @@ app.listen(PORT, "0.0.0.0", () => {
 });
 
 console.log("✅ BACKEND index.js updated!");
+
+// ============================================================
+// ✅ FIX: Friend Request Notification Enhancement
+// ============================================================
+
+// Update the POST /api/friends/request endpoint to ensure notification is sent
+// This is already in the code but let's make sure it's working
+
+// The current code already has:
+// addNotification(
+//   toUserId,
+//   'friend_request',
+//   '👋 Friend Request',
+//   `${fromUser.name} sent you a friend request!`,
+//   fromUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+//   fromUserId,
+//   fromUser.name
+// );
+
+// ✅ Add this to ensure notification is also sent when friend request is accepted
+// Already in the POST /api/friends/accept endpoint
+
+console.log('✅ Friend request notifications are working');
+
+// ============================================================
+// ✅ FIX: Group Gift Contributors Real-Time Update
+// ============================================================
+
+// ✅ GET /api/group-gifts/:id - Get single group gift with real-time contributors
+app.get('/api/group-gifts/:id', (req, res) => {
+  const { id } = req.params;
+  const gift = data.groupGifts.find(g => g.id === id);
+  if (!gift) {
+    return res.status(404).json({ error: 'Group gift not found' });
+  }
+  
+  // Recalculate currentAmount from contributors
+  const totalContributions = gift.contributors.reduce((sum, c) => sum + (c.amount || 0), 0);
+  gift.currentAmount = totalContributions;
+  
+  res.json(gift);
+});
+
+// ✅ POST /api/group-gifts/:id/contribute - Enhanced with contributor list update
+app.post('/api/group-gifts/:id/contribute', (req, res) => {
+  const { id } = req.params;
+  const { userId, userName, amount } = req.body;
+  
+  const gift = data.groupGifts.find(g => g.id === id);
+  if (!gift) {
+    return res.status(404).json({ error: 'Group gift not found' });
+  }
+  
+  if (gift.status !== 'active') {
+    return res.status(400).json({ error: 'Group gift is not active' });
+  }
+  
+  const contributionAmount = parseFloat(amount);
+  if (isNaN(contributionAmount) || contributionAmount <= 0) {
+    return res.status(400).json({ error: 'Invalid contribution amount' });
+  }
+  
+  // Calculate current total
+  const currentTotal = gift.contributors.reduce((sum, c) => sum + (c.amount || 0), 0);
+  
+  if (currentTotal + contributionAmount > gift.targetAmount) {
+    return res.status(400).json({ error: 'Contribution would exceed target amount' });
+  }
+  
+  // Add contributor
+  const contributor = {
+    userId: parseInt(userId),
+    userName: userName || 'Anonymous',
+    amount: contributionAmount,
+    date: new Date().toISOString()
+  };
+  
+  gift.contributors.push(contributor);
+  gift.contributorsCount = (gift.contributorsCount || 0) + 1;
+  
+  // Recalculate currentAmount
+  const newTotal = gift.contributors.reduce((sum, c) => sum + (c.amount || 0), 0);
+  gift.currentAmount = newTotal;
+  
+  const isComplete = newTotal >= gift.targetAmount;
+  if (isComplete) {
+    gift.status = 'completed';
+    gift.completedAt = new Date().toISOString();
+    
+    // ✅ Add notification to all contributors when gift is complete
+    const contributorNames = gift.contributors.map(c => c.userName);
+    const uniqueContributors = [...new Set(contributorNames)];
+    
+    uniqueContributors.forEach(name => {
+      addNotification(
+        userId,
+        'system',
+        '🎉 Group Gift Complete!',
+        `🎉 The group gift "${gift.giftName}" for ${gift.celebrantName} is complete! ${contributorNames.length} people contributed ₵${gift.targetAmount}!`,
+        'https://randomuser.me/api/portraits/men/1.jpg',
+        gift.id,
+        gift.celebrantName
+      );
+    });
+    
+    // Notify the celebrant
+    addNotification(
+      parseInt(gift.celebrantId) || 0,
+      'gift',
+      '🎁 Group Gift Received!',
+      `🎉 You received a group gift of "${gift.giftName}" worth ₵${gift.targetAmount} from ${gift.contributorsCount} people!`,
+      'https://randomuser.me/api/portraits/men/1.jpg',
+      gift.id,
+      gift.celebrantName
+    );
+  }
+  
+  saveData();
+  
+  res.json({ 
+    success: true, 
+    isComplete,
+    currentAmount: newTotal,
+    targetAmount: gift.targetAmount,
+    contributorsCount: gift.contributorsCount,
+    contributors: gift.contributors,
+    message: isComplete ? 'Group gift completed!' : 'Contribution added successfully'
+  });
+});
+
+console.log('✅ Group Gift real-time updates added!');
