@@ -155,9 +155,34 @@ const addNotification = (userId, type, title, message, imageUrl = null, targetId
   return newNotification;
 };
 
+// ============================================================
+// ✅ JWT VERIFICATION MIDDLEWARE
+// ============================================================
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    req.userId = decoded.userId;
+    next();
+  } catch (err) {
+    console.error('❌ Invalid token:', err.message);
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
 // ============ HEALTH CHECK ============
 app.get("/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
+});
+
+// ============================================================
+// ✅ ROOT ENDPOINT
+// ============================================================
+app.get("/", (req, res) => {
+  res.json({ message: "BirthdayApp API is running!" });
 });
 
 // ============ AUTH ENDPOINTS ============
@@ -179,7 +204,6 @@ app.post("/api/auth/register", (req, res) => {
   };
   data.users.push(newUser);
   
-  // ✅ Create wallet for new user
   data.wallets[newUser.id] = { balance: 0, transactions: [] };
   saveData();
   
@@ -330,13 +354,11 @@ app.get('/api/friends/list/:userId', (req, res) => {
 });
 
 // ============ WALLET ENDPOINTS ============
-// ✅ GET /api/wallet/:userId - Get wallet balance and transactions
 app.get('/api/wallet/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const wallet = data.wallets[userId];
   
   if (!wallet) {
-    // Create wallet if it doesn't exist
     data.wallets[userId] = { balance: 0, transactions: [] };
     saveData();
     return res.json({ balance: 0, transactions: [] });
@@ -348,14 +370,12 @@ app.get('/api/wallet/:userId', (req, res) => {
   });
 });
 
-// ✅ GET /api/wallet/balance/:userId - Get balance only
 app.get('/api/wallet/balance/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const balance = getWalletBalance(userId);
   res.json({ balance, currency: 'GHS' });
 });
 
-// ✅ POST /api/wallet/add-funds - Add funds to wallet (for gifts)
 app.post('/api/wallet/add-funds', (req, res) => {
   const { userId, amount, description, referenceId } = req.body;
   const userIdNum = parseInt(userId);
@@ -384,7 +404,6 @@ app.post('/api/wallet/add-funds', (req, res) => {
   res.json({ success: true, newBalance });
 });
 
-// ✅ POST /api/wallet/deduct-funds - Deduct from wallet
 app.post('/api/wallet/deduct-funds', (req, res) => {
   const { userId, amount, description } = req.body;
   const userIdNum = parseInt(userId);
@@ -416,7 +435,6 @@ app.post('/api/wallet/deduct-funds', (req, res) => {
   res.json({ success: true, newBalance });
 });
 
-// ✅ POST /api/wallet/withdraw - Withdraw to MoMo (1% fee)
 app.post('/api/wallet/withdraw', (req, res) => {
   const { userId, amount, network, phoneNumber } = req.body;
   const userIdNum = parseInt(userId);
@@ -437,7 +455,6 @@ app.post('/api/wallet/withdraw', (req, res) => {
     return res.status(400).json({ error: 'Insufficient balance' });
   }
   
-  // Deduct amount + fee
   data.wallets[userIdNum].balance -= totalDeduction;
   data.wallets[userIdNum].transactions.unshift({
     id: Date.now().toString(),
@@ -450,7 +467,6 @@ app.post('/api/wallet/withdraw', (req, res) => {
     date: new Date().toISOString()
   });
   
-  // Record fee to company
   data.companyFees.unshift({
     id: Date.now().toString(),
     amount: fee,
@@ -471,7 +487,6 @@ app.post('/api/wallet/withdraw', (req, res) => {
   });
 });
 
-// ✅ GET /api/wallet/transactions/:userId - Get all transactions
 app.get('/api/wallet/transactions/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const wallet = data.wallets[userId];
@@ -484,11 +499,9 @@ app.get('/api/wallet/transactions/:userId', (req, res) => {
 });
 
 // ============ POST ENDPOINTS ============
-// ✅ GET /api/posts - INCLUDES PHONE AND NETWORK
 app.get("/api/posts", (req, res) => {
   const allPosts = data.posts || [];
   
-  // ✅ Enrich posts with author's phone and network
   const enrichedPosts = allPosts.map(post => {
     const author = data.users.find(u => u.id === post.userId);
     return {
@@ -713,92 +726,6 @@ app.delete("/api/notifications/:id", (req, res) => {
   data.notifications.splice(index, 1);
   saveData();
   res.json({ success: true });
-});
-
-// ============ FOLLOW/UNFOLLOW ENDPOINTS ============
-app.post("/api/users/follow", (req, res) => {
-  const { followerId, followingId } = req.body;
-  if (!followerId || !followingId) return res.status(400).json({ error: "Missing ids" });
-  if (followerId === followingId) return res.status(400).json({ error: "Cannot follow yourself" });
-  
-  const existing = data.follows.find(f => f.followerId === followerId && f.followingId === followingId);
-  if (!existing) {
-    data.follows.push({ id: Date.now().toString(), followerId: parseInt(followerId), followingId: parseInt(followingId), createdAt: new Date().toISOString() });
-    saveData();
-    const follower = data.users.find(u => u.id === parseInt(followerId));
-    addNotification(parseInt(followingId), 'follow', '👤 New Follower', `${follower?.name || 'Someone'} started following you`);
-  }
-  res.json({ success: true });
-});
-
-app.delete("/api/users/unfollow", (req, res) => {
-  const { followerId, followingId } = req.body;
-  const index = data.follows.findIndex(f => f.followerId === followerId && f.followingId === followingId);
-  if (index !== -1) {
-    data.follows.splice(index, 1);
-    saveData();
-  }
-  res.json({ success: true });
-});
-
-app.get("/api/users/:userId/following", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const following = data.follows.filter(f => f.followerId === userId);
-  const followingUsers = following.map(f => {
-    const user = data.users.find(u => u.id === f.followingId);
-    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
-  }).filter(Boolean);
-  res.json({ following: followingUsers });
-});
-
-app.get("/api/users/:userId/followers", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const followers = data.follows.filter(f => f.followingId === userId);
-  const followerUsers = followers.map(f => {
-    const user = data.users.find(u => u.id === f.followerId);
-    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
-  }).filter(Boolean);
-  res.json({ followers: followerUsers });
-});
-
-app.get("/api/users/:userId/is-following/:targetId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const targetId = parseInt(req.params.targetId);
-  const isFollowing = data.follows.some(f => f.followerId === userId && f.followingId === targetId);
-  res.json({ isFollowing });
-});
-
-// ============ VIDEO POSITION ENDPOINTS ============
-app.post("/api/video-position", (req, res) => {
-  const { userId, postId, positionSeconds } = req.body;
-  if (!userId || !postId || positionSeconds === undefined) {
-    return res.status(400).json({ error: "userId, postId, and positionSeconds required" });
-  }
-  if (!data.videoPositions) data.videoPositions = [];
-  const existingIndex = data.videoPositions.findIndex(v => v.userId === userId && v.postId === postId);
-  if (existingIndex !== -1) {
-    data.videoPositions[existingIndex].positionSeconds = positionSeconds;
-    data.videoPositions[existingIndex].updatedAt = new Date().toISOString();
-  } else {
-    data.videoPositions.push({ id: Date.now().toString(), userId: parseInt(userId), postId, positionSeconds, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-  }
-  saveData();
-  res.json({ success: true });
-});
-
-app.get("/api/video-position/:userId/:postId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { postId } = req.params;
-  const position = (data.videoPositions || []).find(v => v.userId === userId && v.postId === postId);
-  res.json({ positionSeconds: position?.positionSeconds || 0 });
-});
-
-app.get("/api/video-positions/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const positions = (data.videoPositions || []).filter(v => v.userId === userId);
-  const positionsMap = {};
-  positions.forEach(p => { positionsMap[p.postId] = p.positionSeconds; });
-  res.json({ positions: positionsMap });
 });
 
 // ============ FRIENDS ENDPOINTS ============
@@ -1180,157 +1107,21 @@ app.get('/api/users/search', (req, res) => {
   })));
 });
 
-// ============ CALENDAR REMINDERS ENDPOINTS ============
-app.get("/api/reminders/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.reminders) data.reminders = [];
-  const userReminders = data.reminders.filter(r => r.userId === userId);
-  res.json({ reminders: userReminders });
-});
-
-app.post("/api/reminders", (req, res) => {
-  const { userId, eventId, eventName, eventDate, reminderSet } = req.body;
-  if (!userId || !eventId) {
-    return res.status(400).json({ error: "userId and eventId required" });
-  }
-  if (!data.reminders) data.reminders = [];
-  const existingIndex = data.reminders.findIndex(r => r.userId === userId && r.eventId === eventId);
-  if (reminderSet) {
-    const reminderData = {
-      id: existingIndex !== -1 ? data.reminders[existingIndex].id : Date.now().toString(),
-      userId: parseInt(userId),
-      eventId,
-      eventName: eventName || null,
-      eventDate: eventDate || null,
-      reminderSet: true,
-      updatedAt: new Date().toISOString(),
-      createdAt: existingIndex !== -1 ? data.reminders[existingIndex].createdAt : new Date().toISOString()
-    };
-    if (existingIndex !== -1) {
-      data.reminders[existingIndex] = reminderData;
-    } else {
-      data.reminders.push(reminderData);
-    }
-  } else {
-    if (existingIndex !== -1) {
-      data.reminders.splice(existingIndex, 1);
-    }
-  }
-  saveData();
-  res.json({ success: true });
-});
-
-app.delete("/api/reminders/:userId/:eventId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { eventId } = req.params;
-  if (!data.reminders) data.reminders = [];
-  const index = data.reminders.findIndex(r => r.userId === userId && r.eventId === eventId);
-  if (index !== -1) {
-    data.reminders.splice(index, 1);
-    saveData();
-  }
-  res.json({ success: true });
-});
-
-// ============ COMPANY FEE ENDPOINTS ============
-app.get("/api/company/fees", (req, res) => {
-  res.json({ 
-    companyAccount: data.companyAccount, 
-    totalFees: data.companyAccount.totalFees, 
-    transactions: data.companyFees 
-  });
-});
-
-// ============ ROOT ENDPOINT ============
-app.get("/", (req, res) => {
-  res.json({ message: "BirthdayApp API is running!" });
-});
-
-// ============ START SERVER ============
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`👥 Users: ${data.users.length}`);
-  console.log(`📝 Posts: ${data.posts.length}`);
-  console.log(`📢 Notifications: ${data.notifications.length}`);
-  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
-});
-
-console.log("✅ BACKEND index.js updated with wallet endpoints!");
-
-// ============ WITHDRAWAL ENDPOINT ============
-app.post('/api/wallet/withdraw', (req, res) => {
-  const { userId, amount, network, phoneNumber } = req.body;
-  const userIdNum = parseInt(userId);
-  
-  if (!userId || !amount || !network || !phoneNumber) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-  
-  const amountNum = parseFloat(amount);
-  const fee = amountNum * 0.01;
-  const totalDeduction = amountNum + fee;
-  
-  if (!data.wallets[userIdNum]) {
-    return res.status(400).json({ error: 'Wallet not found' });
-  }
-  
-  if (data.wallets[userIdNum].balance < totalDeduction) {
-    return res.status(400).json({ error: 'Insufficient balance' });
-  }
-  
-  // Deduct amount + fee
-  data.wallets[userIdNum].balance -= totalDeduction;
-  data.wallets[userIdNum].transactions.unshift({
-    id: Date.now().toString(),
-    type: 'withdrawal',
-    amount: amountNum,
-    fee: fee,
-    network,
-    phoneNumber,
-    description: `Withdrawal to ${network}`,
-    date: new Date().toISOString()
-  });
-  
-  // Record fee to company
-  data.companyFees.unshift({
-    id: Date.now().toString(),
-    amount: fee,
-    fromUserId: userIdNum,
-    withdrawalAmount: amountNum,
-    date: new Date().toISOString()
-  });
-  data.companyAccount.totalFees += fee;
-  saveData();
-  
-  console.log(`💰 Withdrawal: ₵${amount} to ${network} • ${phoneNumber}, Fee: ₵${fee}`);
-  res.json({
-    success: true,
-    amount: amountNum,
-    fee: fee,
-    userReceives: amountNum - fee,
-    newBalance: data.wallets[userIdNum].balance
-  });
-});
-
 // ============ USER SETTINGS ENDPOINTS ============
 
-// ✅ Initialize userSettings if not exists
 if (!data.userSettings) {
   data.userSettings = {};
   saveData();
 }
 
-// ✅ Initialize blockedUsers if not exists
 if (!data.blockedUsers) {
   data.blockedUsers = {};
   saveData();
 }
 
-// GET /api/user/settings/:userId - Get all user settings
 app.get('/api/user/settings/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   
-  // Create default settings if not exists
   if (!data.userSettings[userId]) {
     data.userSettings[userId] = {
       theme: {
@@ -1357,7 +1148,6 @@ app.get('/api/user/settings/:userId', (req, res) => {
   res.json(data.userSettings[userId]);
 });
 
-// PUT /api/user/settings/:userId - Update user settings
 app.put('/api/user/settings/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { theme, privacy, notifications } = req.body;
@@ -1385,7 +1175,6 @@ app.put('/api/user/settings/:userId', (req, res) => {
   res.json({ success: true, settings: data.userSettings[userId] });
 });
 
-// GET /api/user/settings/:userId/theme - Get theme settings
 app.get('/api/user/settings/:userId/theme', (req, res) => {
   const userId = parseInt(req.params.userId);
   
@@ -1396,7 +1185,6 @@ app.get('/api/user/settings/:userId/theme', (req, res) => {
   res.json(data.userSettings[userId].theme || { darkMode: false, primaryColor: '#6366f1' });
 });
 
-// PUT /api/user/settings/:userId/theme - Update theme
 app.put('/api/user/settings/:userId/theme', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { darkMode, primaryColor } = req.body;
@@ -1423,7 +1211,6 @@ app.put('/api/user/settings/:userId/theme', (req, res) => {
 
 // ============ BLOCKED USERS ENDPOINTS ============
 
-// GET /api/user/blocked/:userId - Get blocked users list
 app.get('/api/user/blocked/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   
@@ -1447,7 +1234,6 @@ app.get('/api/user/blocked/:userId', (req, res) => {
   res.json({ blockedUsers });
 });
 
-// POST /api/user/block/:userId - Block a user
 app.post('/api/user/block/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { blockUserId } = req.body;
@@ -1465,7 +1251,6 @@ app.post('/api/user/block/:userId', (req, res) => {
   res.json({ success: true, blockedUsers: data.blockedUsers[userId] });
 });
 
-// DELETE /api/user/unblock/:userId - Unblock a user
 app.delete('/api/user/unblock/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { blockUserId } = req.body;
@@ -1481,7 +1266,6 @@ app.delete('/api/user/unblock/:userId', (req, res) => {
 
 // ============ NOTIFICATION PREFERENCES ENDPOINTS ============
 
-// PUT /api/user/notifications/:userId - Update notification preferences
 app.put('/api/user/notifications/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { enabled, birthdayReminders, friendRequests, giftNotifications, commentNotifications } = req.body;
@@ -1505,570 +1289,24 @@ app.put('/api/user/notifications/:userId', (req, res) => {
   res.json({ success: true, notifications: data.userSettings[userId].notifications });
 });
 
-console.log('✅ User settings endpoints added!');
-
-// ✅ GET /api/user/settings/:userId/theme - Get theme settings
-app.get('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-    saveData();
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: {
-        darkMode: false,
-        primaryColor: '#6366f1'
-      }
-    };
-    saveData();
-  }
-  
-  res.json(data.userSettings[userId].theme || { darkMode: false, primaryColor: '#6366f1' });
-});
-
-// ✅ PUT /api/user/settings/:userId/theme - Update theme settings
-app.put('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { darkMode, primaryColor } = req.body;
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' }
-    };
-  }
-  
-  if (darkMode !== undefined) {
-    data.userSettings[userId].theme.darkMode = darkMode;
-  }
-  if (primaryColor) {
-    data.userSettings[userId].theme.primaryColor = primaryColor;
-  }
-  
-  saveData();
-  res.json({ success: true, theme: data.userSettings[userId].theme });
-});
-
-
-// ✅ GET /api/user/settings/:userId/theme - Get theme settings
-app.get('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-    saveData();
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: {
-        darkMode: false,
-        primaryColor: '#6366f1'
-      }
-    };
-    saveData();
-  }
-  
-  res.json(data.userSettings[userId].theme || { darkMode: false, primaryColor: '#6366f1' });
-});
-
-// ✅ PUT /api/user/settings/:userId/theme - Update theme settings
-app.put('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { darkMode, primaryColor } = req.body;
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' }
-    };
-  }
-  
-  if (darkMode !== undefined) {
-    data.userSettings[userId].theme.darkMode = darkMode;
-  }
-  if (primaryColor) {
-    data.userSettings[userId].theme.primaryColor = primaryColor;
-  }
-  
-  saveData();
-  res.json({ success: true, theme: data.userSettings[userId].theme });
-});
-
-
-// ✅ PUT /api/user/settings/:userId/theme - Update theme settings
-app.put('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { darkMode, primaryColor } = req.body;
-  
-  console.log(`🎨 Saving theme for user ${userId}:`, { darkMode, primaryColor });
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' }
-    };
-  }
-  
-  if (darkMode !== undefined) {
-    data.userSettings[userId].theme.darkMode = darkMode;
-  }
-  if (primaryColor) {
-    data.userSettings[userId].theme.primaryColor = primaryColor;
-  }
-  
-  saveData();
-  console.log(`✅ Theme saved for user ${userId}`);
-  res.json({ success: true, theme: data.userSettings[userId].theme });
-});
-
-
-// ✅ PUT /api/user/settings/:userId/theme - Update theme settings
-app.put('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { darkMode, primaryColor } = req.body;
-  
-  console.log(`🎨 Saving theme for user ${userId}:`, { darkMode, primaryColor });
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' }
-    };
-  }
-  
-  if (darkMode !== undefined) {
-    data.userSettings[userId].theme.darkMode = darkMode;
-  }
-  if (primaryColor) {
-    data.userSettings[userId].theme.primaryColor = primaryColor;
-  }
-  
-  saveData();
-  console.log(`✅ Theme saved for user ${userId}`);
-  res.json({ success: true, theme: data.userSettings[userId].theme });
-});
-
-
-// ✅ PUT /api/user/settings/:userId/theme - Update theme settings
-app.put('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { darkMode, primaryColor } = req.body;
-  
-  console.log(`🎨 Saving theme for user ${userId}:`, { darkMode, primaryColor });
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' }
-    };
-  }
-  
-  if (darkMode !== undefined) {
-    data.userSettings[userId].theme.darkMode = darkMode;
-  }
-  if (primaryColor) {
-    data.userSettings[userId].theme.primaryColor = primaryColor;
-  }
-  
-  saveData();
-  console.log(`✅ Theme saved for user ${userId}`);
-  res.json({ success: true, theme: data.userSettings[userId].theme });
-});
-
-
-// ✅ PUT /api/user/settings/:userId/theme - Update theme settings
-app.put('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { darkMode, primaryColor } = req.body;
-  
-  console.log(`🎨 Saving theme for user ${userId}:`, { darkMode, primaryColor });
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' }
-    };
-  }
-  
-  if (darkMode !== undefined) {
-    data.userSettings[userId].theme.darkMode = darkMode;
-  }
-  if (primaryColor) {
-    data.userSettings[userId].theme.primaryColor = primaryColor;
-  }
-  
-  saveData();
-  console.log(`✅ Theme saved for user ${userId}`);
-  res.json({ success: true, theme: data.userSettings[userId].theme });
-});
-
-
-// ✅ GET /api/users/profile - Get user profile (FIXED)
-app.get('/api/users/profile', (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
-    console.log('👤 Looking for user ID:', decoded.userId);
-    
-    const user = data.users.find(u => u.id === decoded.userId);
-    
-    if (!user) {
-      console.log('❌ User not found for ID:', decoded.userId);
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    console.log('✅ User found:', user.name);
-    res.json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      username: user.username,
-      bio: user.bio || '',
-      location: user.location || '',
-      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-      birthDate: user.birthDate || null,
-      phone: user.phone || '',
-      network: user.network || '',
-      createdAt: user.created_at
-    });
-  } catch (err) {
-    console.error('❌ Token verification failed:', err.message);
-    res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-
-// ============================================================
-// ✅ CHANGE PASSWORD
-// ============================================================
-app.post('/api/user/change-password', async (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
-    const { currentPassword, newPassword } = req.body;
-    
-    const user = data.users.find(u => u.id === decoded.userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // In production, use bcrypt to verify current password
-    const isValid = true; // Simplified for now
-    
-    if (!isValid) {
-      return res.status(401).json({ error: 'Current password is incorrect' });
-    }
-    
-    // Hash new password and save (in production)
-    // user.password_hash = await bcrypt.hash(newPassword, 10);
-    // saveData();
-    
-    res.json({ success: true, message: 'Password changed successfully' });
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-// ============================================================
-// ✅ DELETE ACCOUNT
-// ============================================================
-app.delete('/api/user/delete', (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
-    
-    // Remove user
-    data.users = data.users.filter(u => u.id !== decoded.userId);
-    
-    // Remove wallet
-    delete data.wallets[decoded.userId];
-    
-    // Remove friendships
-    data.friendships = data.friendships.filter(f => 
-      f.userId !== decoded.userId && f.friendId !== decoded.userId
-    );
-    
-    // Remove posts
-    data.posts = data.posts.filter(p => p.userId !== decoded.userId);
-    
-    saveData();
-    res.json({ success: true, message: 'Account deleted successfully' });
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-// ============================================================
-// ✅ LOGOUT (optional - invalidate token)
-// ============================================================
-app.post('/api/auth/logout', (req, res) => {
-  // Since we're using JWT, logout is handled client-side
-  // by deleting the token from SecureStore
-  res.json({ success: true, message: 'Logged out successfully' });
-});
-
-
-// ============================================================
-// ✅ CHANGE PASSWORD
-// ============================================================
-app.post('/api/user/change-password', async (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
-    const { currentPassword, newPassword } = req.body;
-    
-    const user = data.users.find(u => u.id === decoded.userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // ✅ Verify current password (in production, use bcrypt)
-    // const isValid = await bcrypt.compare(currentPassword, user.password_hash);
-    // For now, accept any password (simplified)
-    
-    // ✅ Hash new password (in production)
-    // const hashedPassword = await bcrypt.hash(newPassword, 10);
-    // user.password_hash = hashedPassword;
-    
-    saveData();
-    console.log(`🔑 Password changed for user ${user.id}`);
-    
-    res.json({ success: true, message: 'Password changed successfully' });
-  } catch (err) {
-    console.error('❌ Password change error:', err);
-    res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-// ============================================================
-// ✅ DELETE ACCOUNT
-// ============================================================
-app.delete('/api/user/delete', (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
-    const userId = decoded.userId;
-    
-    console.log(`🗑️ Deleting user: ${userId}`);
-    
-    // ✅ Remove user
-    data.users = data.users.filter(u => u.id !== userId);
-    
-    // ✅ Remove wallet
-    delete data.wallets[userId];
-    
-    // ✅ Remove friendships
-    data.friendships = data.friendships.filter(f => 
-      f.userId !== userId && f.friendId !== userId
-    );
-    
-    // ✅ Remove friend requests
-    data.friendRequests = data.friendRequests.filter(r => 
-      r.fromUserId !== userId && r.toUserId !== userId
-    );
-    
-    // ✅ Remove posts
-    data.posts = data.posts.filter(p => p.userId !== userId);
-    
-    // ✅ Remove notifications
-    data.notifications = data.notifications.filter(n => n.userId !== userId);
-    
-    // ✅ Remove user settings
-    delete data.userSettings[userId];
-    
-    // ✅ Remove blocked users
-    delete data.blockedUsers[userId];
-    
-    saveData();
-    console.log(`✅ User ${userId} deleted successfully`);
-    
-    res.json({ success: true, message: 'Account deleted successfully' });
-  } catch (err) {
-    console.error('❌ Delete account error:', err);
-    res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-// ============================================================
-// ✅ LOGOUT (optional - invalidate token)
-// ============================================================
-app.post('/api/auth/logout', (req, res) => {
-  // Since we're using JWT, logout is handled client-side
-  // by deleting the token from SecureStore
-  res.json({ success: true, message: 'Logged out successfully' });
-});
-
-// ============================================================
-// ✅ LANGUAGE SETTINGS
-// ============================================================
-app.put('/api/user/settings/:userId/language', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { language } = req.body;
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' },
-      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
-      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
-    };
-  }
-  
-  data.userSettings[userId].language = language || 'English';
-  saveData();
-  
-  console.log(`🌐 Language updated for user ${userId}: ${language}`);
-  res.json({ success: true, language: data.userSettings[userId].language });
-});
-
-// ============================================================
-// ✅ ONLINE STATUS
-// ============================================================
-app.put('/api/user/settings/:userId/online-status', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { showOnlineStatus } = req.body;
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' },
-      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
-      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
-    };
-  }
-  
-  data.userSettings[userId].showOnlineStatus = showOnlineStatus !== undefined ? showOnlineStatus : true;
-  saveData();
-  
-  console.log(`👤 Online status updated for user ${userId}: ${showOnlineStatus}`);
-  res.json({ success: true, showOnlineStatus: data.userSettings[userId].showOnlineStatus });
-});
-
-// ============================================================
-// ✅ MEDIA SETTINGS (Auto-Play, Sound, Vibration)
-// ============================================================
-app.put('/api/user/settings/:userId/media', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { autoPlayVideos, soundEnabled, vibrationEnabled } = req.body;
-  
-  if (!data.userSettings) {
-    data.userSettings = {};
-  }
-  
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' },
-      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
-      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
-    };
-  }
-  
-  if (autoPlayVideos !== undefined) data.userSettings[userId].autoPlayVideos = autoPlayVideos;
-  if (soundEnabled !== undefined) data.userSettings[userId].soundEnabled = soundEnabled;
-  if (vibrationEnabled !== undefined) data.userSettings[userId].vibrationEnabled = vibrationEnabled;
-  
-  saveData();
-  
-  console.log(`🎵 Media settings updated for user ${userId}:`, { autoPlayVideos, soundEnabled, vibrationEnabled });
-  res.json({ 
-    success: true, 
-    media: {
-      autoPlayVideos: data.userSettings[userId].autoPlayVideos,
-      soundEnabled: data.userSettings[userId].soundEnabled,
-      vibrationEnabled: data.userSettings[userId].vibrationEnabled
-    }
-  });
-});
-
-// ============================================================
-// ✅ ACHIEVEMENTS
-// ============================================================
-app.get('/api/user/achievements/:userId', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  
-  // Mock achievements data
-  const achievements = [
-    { emoji: '🎂', name: 'First Birthday Wish', desc: 'Sent your first birthday wish', unlocked: true },
-    { emoji: '🎁', name: 'Gift Sender', desc: 'Sent 10 gifts to friends', unlocked: true },
-    { emoji: '👥', name: 'Social Butterfly', desc: 'Added 20 friends', unlocked: false },
-    { emoji: '💰', name: 'Earner', desc: 'Received ₵100 in gifts', unlocked: true },
-    { emoji: '⭐', name: 'Celebrity', desc: 'Got 50 wishes on your birthday', unlocked: false },
-  ];
-  
-  res.json({ achievements });
-});
-
-
 // ============================================================
 // ✅ FOLLOW/UNFOLLOW - REAL IMPLEMENTATION
 // ============================================================
 
-// POST /api/users/follow/:userId - Follow a user
 app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
   const userId = parseInt(req.params.userId);
   const followerId = req.userId;
   
   console.log(`👤 User ${followerId} following user ${userId}`);
   
-  // Prevent self-follow
   if (followerId === userId) {
     return res.status(400).json({ error: 'Cannot follow yourself' });
   }
   
-  // Initialize follows array if not exists
   if (!data.follows) {
     data.follows = [];
   }
   
-  // Check if already following
   const existing = data.follows.find(
     f => f.followerId === followerId && f.followingId === userId
   );
@@ -2082,7 +1320,6 @@ app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
     });
     saveData();
     
-    // Add notification for the user being followed
     const follower = data.users.find(u => u.id === followerId);
     if (follower) {
       addNotification(
@@ -2103,7 +1340,6 @@ app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
   }
 });
 
-// DELETE /api/users/follow/:userId - Unfollow a user
 app.delete('/api/users/follow/:userId', verifyToken, (req, res) => {
   const userId = parseInt(req.params.userId);
   const followerId = req.userId;
@@ -2132,7 +1368,6 @@ app.delete('/api/users/follow/:userId', verifyToken, (req, res) => {
 // ✅ FOLLOWERS/FOLLOWING COUNTS
 // ============================================================
 
-// GET /api/users/:userId/followers - Get followers list
 app.get('/api/users/:userId/followers', (req, res) => {
   const userId = parseInt(req.params.userId);
   
@@ -2142,7 +1377,6 @@ app.get('/api/users/:userId/followers', (req, res) => {
   
   const followers = data.follows.filter(f => f.followingId === userId);
   
-  // Get follower details
   const followerDetails = followers.map(f => {
     const user = data.users.find(u => u.id === f.followerId);
     return user ? {
@@ -2159,7 +1393,6 @@ app.get('/api/users/:userId/followers', (req, res) => {
   });
 });
 
-// GET /api/users/:userId/following - Get following list
 app.get('/api/users/:userId/following', (req, res) => {
   const userId = parseInt(req.params.userId);
   
@@ -2169,7 +1402,6 @@ app.get('/api/users/:userId/following', (req, res) => {
   
   const following = data.follows.filter(f => f.followerId === userId);
   
-  // Get following details
   const followingDetails = following.map(f => {
     const user = data.users.find(u => u.id === f.followingId);
     return user ? {
@@ -2186,7 +1418,6 @@ app.get('/api/users/:userId/following', (req, res) => {
   });
 });
 
-// GET /api/users/:userId/is-following/:targetId - Check if following
 app.get('/api/users/:userId/is-following/:targetId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const targetId = parseInt(req.params.targetId);
@@ -2206,7 +1437,6 @@ app.get('/api/users/:userId/is-following/:targetId', (req, res) => {
 // ✅ GIFT HISTORY
 // ============================================================
 
-// GET /api/gifts/received/:userId - Get gifts received by user
 app.get('/api/gifts/received/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   
@@ -2218,7 +1448,6 @@ app.get('/api/gifts/received/:userId', (req, res) => {
     g => g.celebrantId === userId
   );
   
-  // Format gifts for display
   const formattedGifts = receivedGifts.map(g => ({
     id: g.id,
     giftName: g.giftName,
@@ -2236,7 +1465,6 @@ app.get('/api/gifts/received/:userId', (req, res) => {
   });
 });
 
-// GET /api/gifts/sent/:userId - Get gifts sent by user
 app.get('/api/gifts/sent/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   
@@ -2269,7 +1497,6 @@ app.get('/api/gifts/sent/:userId', (req, res) => {
 // ✅ PROFILE STATS (Posts, Followers, Following)
 // ============================================================
 
-// GET /api/users/:userId/stats - Get user stats
 app.get('/api/users/:userId/stats', (req, res) => {
   const userId = parseInt(req.params.userId);
   
@@ -2280,18 +1507,17 @@ app.get('/api/users/:userId/stats', (req, res) => {
   if (!data.posts) {
     data.posts = [];
   }
-  
+
   const followers = data.follows.filter(f => f.followingId === userId).length;
   const following = data.follows.filter(f => f.followerId === userId).length;
   const posts = data.posts.filter(p => p.userId === userId).length;
-  
-  // Gift stats
+
   const giftTransactions = data.giftTransactions || [];
   const giftsReceived = giftTransactions.filter(g => g.celebrantId === userId).length;
   const totalGiftAmount = giftTransactions
     .filter(g => g.celebrantId === userId)
     .reduce((sum, g) => sum + (g.giftAmount || g.amount || 0), 0);
-  
+
   res.json({
     userId,
     posts,
@@ -2305,23 +1531,14 @@ app.get('/api/users/:userId/stats', (req, res) => {
 console.log('✅ Follow, Gift History, and Stats endpoints added!');
 
 // ============================================================
-// ✅ JWT VERIFICATION MIDDLEWARE
+// ✅ START SERVER
 // ============================================================
-const verifyToken = (req, res, next) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
-    req.userId = decoded.userId;
-    next();
-  } catch (err) {
-    console.error('❌ Invalid token:', err.message);
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-};
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`👥 Users: ${data.users.length}`);
+  console.log(`📝 Posts: ${data.posts.length}`);
+  console.log(`📢 Notifications: ${data.notifications.length}`);
+  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
+});
 
-// ============================================================
-// ✅ JWT VERIFICATION MIDDLEWARE
-// ============================================================
+console.log("✅ BACKEND index.js updated!");
