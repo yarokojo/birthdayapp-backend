@@ -2104,3 +2104,68 @@ app.delete('/api/user/delete', verifyToken, (req, res) => {
 });
 
 console.log('✅ Delete account endpoint added!');
+
+// ============================================================
+// ✅ MEDIA SETTINGS (Auto-Play, Sound, Vibration)
+// ============================================================
+
+// GET /api/user/settings/:userId/media - Get media preferences
+app.get('/api/user/settings/:userId/media', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.userSettings) {
+    data.userSettings = {};
+    saveData();
+  }
+  
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true },
+      media: { autoPlayVideos: true, soundEnabled: true, vibrationEnabled: true }
+    };
+    saveData();
+  }
+  
+  const media = data.userSettings[userId].media || {
+    autoPlayVideos: true,
+    soundEnabled: true,
+    vibrationEnabled: true
+  };
+  
+  res.json({ success: true, media });
+});
+
+// PUT /api/user/settings/:userId/media - Update media preferences
+app.put('/api/user/settings/:userId/media', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { autoPlayVideos, soundEnabled, vibrationEnabled } = req.body;
+  
+  if (!data.userSettings) {
+    data.userSettings = {};
+  }
+  
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true },
+      media: { autoPlayVideos: true, soundEnabled: true, vibrationEnabled: true }
+    };
+  }
+  
+  if (autoPlayVideos !== undefined) data.userSettings[userId].media.autoPlayVideos = autoPlayVideos;
+  if (soundEnabled !== undefined) data.userSettings[userId].media.soundEnabled = soundEnabled;
+  if (vibrationEnabled !== undefined) data.userSettings[userId].media.vibrationEnabled = vibrationEnabled;
+  
+  saveData();
+  
+  console.log(`🎵 Media settings updated for user ${userId}:`, { autoPlayVideos, soundEnabled, vibrationEnabled });
+  res.json({ 
+    success: true, 
+    media: data.userSettings[userId].media
+  });
+});
+
+console.log('✅ Media settings endpoints added!');
