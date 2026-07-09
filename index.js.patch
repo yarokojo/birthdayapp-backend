@@ -1,0 +1,46 @@
+// ✅ REPLACE the change-password endpoint with this:
+
+app.post('/api/auth/change-password', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { currentPassword, newPassword } = req.body;
+    
+    console.log(`🔑 Password change request for user ${userId}`);
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password required' });
+    }
+    
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    
+    // Find user
+    const user = data.users.find(u => u.id === userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // ✅ Use require inside the function to ensure bcrypt is loaded
+    const bcrypt = require('bcryptjs');
+    
+    // ✅ Compare passwords
+    const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+    console.log(`🔍 Password comparison result: ${isValid}`);
+    
+    if (!isValid) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+    
+    // ✅ Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password_hash = hashedPassword;
+    saveData();
+    
+    console.log(`✅ Password changed for user ${userId}`);
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('❌ Password change error:', error);
+    res.status(500).json({ error: 'Internal server error: ' + error.message });
+  }
+});
