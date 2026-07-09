@@ -386,5 +386,43 @@
       }
     ],
     "NaN": []
-  }
+  },
+  "banners": [
+    {
+      "id": "banner_fallback_1",
+      "title": "🎉 Today's Celebrations",
+      "subtitle": "Check out today's events!",
+      "icon": "🎂",
+      "colors": [
+        "#6366f1",
+        "#8b5cf6",
+        "#a855f7"
+      ],
+      "type": "celebrations",
+      "link": "today",
+      "active": true,
+      "priority": 1,
+      "views": 1,
+      "clicks": 1,
+      "createdAt": "2026-07-09T03:41:33.566Z"
+    },
+    {
+      "id": "banner_fallback_2",
+      "title": "🎁 Gift Shop",
+      "subtitle": "Send a gift to someone special",
+      "icon": "🎁",
+      "colors": [
+        "#ec4899",
+        "#f472b6",
+        "#f9a8d4"
+      ],
+      "type": "gifts",
+      "link": "gift_shop",
+      "active": true,
+      "priority": 2,
+      "views": 0,
+      "clicks": 0,
+      "createdAt": "2026-07-09T03:41:33.567Z"
+    }
+  ]
 }

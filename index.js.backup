@@ -99,6 +99,36 @@ const addToWallet = (userId, amount, giftName, fromName) => {
   return data.wallets[userId].balance;
 };
 
+const deductFromWallet = (userId, amount, description) => {
+  if (!data.wallets[userId]) data.wallets[userId] = { balance: 0, transactions: [] };
+  if (data.wallets[userId].balance < amount) {
+    return { success: false, error: 'Insufficient balance' };
+  }
+  data.wallets[userId].balance -= amount;
+  data.wallets[userId].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'debit',
+    amount,
+    description,
+    date: new Date().toISOString()
+  });
+  saveData();
+  return { success: true, newBalance: data.wallets[userId].balance };
+};
+
+const recordTransaction = (userId, type, amount, description, referenceId = null) => {
+  if (!data.wallets[userId]) data.wallets[userId] = { balance: 0, transactions: [] };
+  data.wallets[userId].transactions.unshift({
+    id: Date.now().toString(),
+    type,
+    amount,
+    description,
+    referenceId,
+    date: new Date().toISOString()
+  });
+  saveData();
+};
+
 // ✅ NOTIFICATION HELPER
 const addNotification = (userId, type, title, message, imageUrl = null, targetId = null, targetName = null, extraData = {}) => {
   console.log(`📨 Creating notification for user ${userId}: ${title}`);
@@ -125,9 +155,34 @@ const addNotification = (userId, type, title, message, imageUrl = null, targetId
   return newNotification;
 };
 
+// ============================================================
+// ✅ JWT VERIFICATION MIDDLEWARE
+// ============================================================
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    req.userId = decoded.userId;
+    next();
+  } catch (err) {
+    console.error('❌ Invalid token:', err.message);
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
 // ============ HEALTH CHECK ============
 app.get("/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
+});
+
+// ============================================================
+// ✅ ROOT ENDPOINT
+// ============================================================
+app.get("/", (req, res) => {
+  res.json({ message: "BirthdayApp API is running!" });
 });
 
 // ============ AUTH ENDPOINTS ============
@@ -136,6 +191,10 @@ app.post("/api/auth/register", (req, res) => {
   const normalizedEmail = email.toLowerCase();
   if (data.users.find(u => u.email === normalizedEmail)) {
     return res.status(400).json({ error: "User already exists" });
+  }
+  // ✅ Birth date is required
+  if (!birthDate) {
+    return res.status(400).json({ error: 'Birth date is required' });
   }
   const newUser = { 
     id: data.users.length + 1, 
@@ -148,7 +207,8 @@ app.post("/api/auth/register", (req, res) => {
     created_at: new Date().toISOString() 
   };
   data.users.push(newUser);
-  if (!data.wallets[newUser.id]) data.wallets[newUser.id] = { balance: 0, transactions: [] };
+  
+  data.wallets[newUser.id] = { balance: 0, transactions: [] };
   saveData();
   
   const token = jwt.sign(
@@ -298,43 +358,164 @@ app.get('/api/friends/list/:userId', (req, res) => {
 });
 
 // ============ WALLET ENDPOINTS ============
-app.get("/api/wallet/balance/:userId", (req, res) => {
-  const balance = getWalletBalance(parseInt(req.params.userId));
+app.get('/api/wallet/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const wallet = data.wallets[userId];
+  
+  if (!wallet) {
+    data.wallets[userId] = { balance: 0, transactions: [] };
+    saveData();
+    return res.json({ balance: 0, transactions: [] });
+  }
+  
+  res.json({
+    balance: wallet.balance || 0,
+    transactions: wallet.transactions || []
+  });
+});
+
+app.get('/api/wallet/balance/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const balance = getWalletBalance(userId);
   res.json({ balance, currency: 'GHS' });
 });
 
-app.get("/api/wallet/transactions/:userId", (req, res) => {
-  const wallet = data.wallets[parseInt(req.params.userId)];
-  res.json({ balance: wallet?.balance || 0, transactions: wallet?.transactions || [] });
-});
-
-app.post("/api/wallet/add-gift", (req, res) => {
-  const { celebrantId, celebrantName, giftAmount, giftName, fromName } = req.body;
-  const amount = parseFloat(giftAmount);
-  const senderName = fromName || 'Someone';
-  const newBalance = addToWallet(celebrantId, amount, giftName, senderName);
-  data.giftTransactions.unshift({ id: Date.now().toString(), celebrantId, celebrantName, giftName, giftAmount: amount, fromName: senderName, date: new Date().toISOString() });
+app.post('/api/wallet/add-funds', (req, res) => {
+  const { userId, amount, description, referenceId } = req.body;
+  const userIdNum = parseInt(userId);
+  
+  if (!userId || !amount) {
+    return res.status(400).json({ error: 'userId and amount required' });
+  }
+  
+  if (!data.wallets[userIdNum]) {
+    data.wallets[userIdNum] = { balance: 0, transactions: [] };
+  }
+  
+  const newBalance = data.wallets[userIdNum].balance + parseFloat(amount);
+  data.wallets[userIdNum].balance = newBalance;
+  data.wallets[userIdNum].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'credit',
+    amount: parseFloat(amount),
+    description: description || 'Funds added',
+    referenceId: referenceId || null,
+    date: new Date().toISOString()
+  });
   saveData();
-  addNotification(celebrantId, 'gift', '🎁 Gift Received', `${senderName} sent you ${giftName} worth ₵${amount}!`);
+  
+  console.log(`💰 Added ₵${amount} to wallet for user ${userId}`);
   res.json({ success: true, newBalance });
 });
 
-app.get("/api/wallet/:userId", (req, res) => {
+app.post('/api/wallet/deduct-funds', (req, res) => {
+  const { userId, amount, description } = req.body;
+  const userIdNum = parseInt(userId);
+  
+  if (!userId || !amount) {
+    return res.status(400).json({ error: 'userId and amount required' });
+  }
+  
+  if (!data.wallets[userIdNum]) {
+    data.wallets[userIdNum] = { balance: 0, transactions: [] };
+  }
+  
+  if (data.wallets[userIdNum].balance < parseFloat(amount)) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+  
+  const newBalance = data.wallets[userIdNum].balance - parseFloat(amount);
+  data.wallets[userIdNum].balance = newBalance;
+  data.wallets[userIdNum].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'debit',
+    amount: parseFloat(amount),
+    description: description || 'Funds deducted',
+    date: new Date().toISOString()
+  });
+  saveData();
+  
+  console.log(`💰 Deducted ₵${amount} from wallet for user ${userId}`);
+  res.json({ success: true, newBalance });
+});
+
+app.post('/api/wallet/withdraw', (req, res) => {
+  const { userId, amount, network, phoneNumber } = req.body;
+  const userIdNum = parseInt(userId);
+  
+  if (!userId || !amount || !network || !phoneNumber) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const amountNum = parseFloat(amount);
+  const fee = amountNum * 0.01;
+  const totalDeduction = amountNum + fee;
+  
+  if (!data.wallets[userIdNum]) {
+    return res.status(400).json({ error: 'Wallet not found' });
+  }
+  
+  if (data.wallets[userIdNum].balance < totalDeduction) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+  
+  data.wallets[userIdNum].balance -= totalDeduction;
+  data.wallets[userIdNum].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'withdrawal',
+    amount: amountNum,
+    fee: fee,
+    network,
+    phoneNumber,
+    description: `Withdrawal to ${network}`,
+    date: new Date().toISOString()
+  });
+  
+  data.companyFees.unshift({
+    id: Date.now().toString(),
+    amount: fee,
+    fromUserId: userIdNum,
+    withdrawalAmount: amountNum,
+    date: new Date().toISOString()
+  });
+  data.companyAccount.totalFees += fee;
+  saveData();
+  
+  console.log(`💰 Withdrawal: ₵${amount} to ${network} • ${phoneNumber}, Fee: ₵${fee}`);
+  res.json({
+    success: true,
+    amount: amountNum,
+    fee: fee,
+    userReceives: amountNum - fee,
+    newBalance: data.wallets[userIdNum].balance
+  });
+});
+
+app.get('/api/wallet/transactions/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const wallet = data.wallets[userId];
-  res.json({ balance: wallet?.balance || 0, transactions: wallet?.transactions || [] });
-});
-
-app.post("/api/wallet/add-funds", (req, res) => {
-  const { userId, amount, giftName, fromName } = req.body;
-  const newBalance = addToWallet(userId, parseFloat(amount), giftName, fromName);
-  res.json({ success: true, newBalance });
+  
+  if (!wallet) {
+    return res.json({ transactions: [] });
+  }
+  
+  res.json({ transactions: wallet.transactions || [] });
 });
 
 // ============ POST ENDPOINTS ============
 app.get("/api/posts", (req, res) => {
   const allPosts = data.posts || [];
-  res.json(allPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+  
+  const enrichedPosts = allPosts.map(post => {
+    const author = data.users.find(u => u.id === post.userId);
+    return {
+      ...post,
+      phone: author?.phone || '',
+      network: author?.network || 'MTN',
+    };
+  });
+  
+  res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 });
 
 app.post("/api/posts", (req, res) => {
@@ -374,6 +555,8 @@ app.post("/api/posts", (req, res) => {
       authorName: user.name,
       authorHandle: user.username,
       authorImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      phone: user.phone || '',
+      network: user.network || 'MTN',
       likes: 0,
       comments: 0,
       reposts: 0,
@@ -547,92 +730,6 @@ app.delete("/api/notifications/:id", (req, res) => {
   data.notifications.splice(index, 1);
   saveData();
   res.json({ success: true });
-});
-
-// ============ FOLLOW/UNFOLLOW ENDPOINTS ============
-app.post("/api/users/follow", (req, res) => {
-  const { followerId, followingId } = req.body;
-  if (!followerId || !followingId) return res.status(400).json({ error: "Missing ids" });
-  if (followerId === followingId) return res.status(400).json({ error: "Cannot follow yourself" });
-  
-  const existing = data.follows.find(f => f.followerId === followerId && f.followingId === followingId);
-  if (!existing) {
-    data.follows.push({ id: Date.now().toString(), followerId: parseInt(followerId), followingId: parseInt(followingId), createdAt: new Date().toISOString() });
-    saveData();
-    const follower = data.users.find(u => u.id === parseInt(followerId));
-    addNotification(parseInt(followingId), 'follow', '👤 New Follower', `${follower?.name || 'Someone'} started following you`);
-  }
-  res.json({ success: true });
-});
-
-app.delete("/api/users/unfollow", (req, res) => {
-  const { followerId, followingId } = req.body;
-  const index = data.follows.findIndex(f => f.followerId === followerId && f.followingId === followingId);
-  if (index !== -1) {
-    data.follows.splice(index, 1);
-    saveData();
-  }
-  res.json({ success: true });
-});
-
-app.get("/api/users/:userId/following", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const following = data.follows.filter(f => f.followerId === userId);
-  const followingUsers = following.map(f => {
-    const user = data.users.find(u => u.id === f.followingId);
-    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
-  }).filter(Boolean);
-  res.json({ following: followingUsers });
-});
-
-app.get("/api/users/:userId/followers", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const followers = data.follows.filter(f => f.followingId === userId);
-  const followerUsers = followers.map(f => {
-    const user = data.users.find(u => u.id === f.followerId);
-    return user ? { id: user.id, name: user.name, username: user.username, profileImage: user.profileImage } : null;
-  }).filter(Boolean);
-  res.json({ followers: followerUsers });
-});
-
-app.get("/api/users/:userId/is-following/:targetId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const targetId = parseInt(req.params.targetId);
-  const isFollowing = data.follows.some(f => f.followerId === userId && f.followingId === targetId);
-  res.json({ isFollowing });
-});
-
-// ============ VIDEO POSITION ENDPOINTS ============
-app.post("/api/video-position", (req, res) => {
-  const { userId, postId, positionSeconds } = req.body;
-  if (!userId || !postId || positionSeconds === undefined) {
-    return res.status(400).json({ error: "userId, postId, and positionSeconds required" });
-  }
-  if (!data.videoPositions) data.videoPositions = [];
-  const existingIndex = data.videoPositions.findIndex(v => v.userId === userId && v.postId === postId);
-  if (existingIndex !== -1) {
-    data.videoPositions[existingIndex].positionSeconds = positionSeconds;
-    data.videoPositions[existingIndex].updatedAt = new Date().toISOString();
-  } else {
-    data.videoPositions.push({ id: Date.now().toString(), userId: parseInt(userId), postId, positionSeconds, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-  }
-  saveData();
-  res.json({ success: true });
-});
-
-app.get("/api/video-position/:userId/:postId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { postId } = req.params;
-  const position = (data.videoPositions || []).find(v => v.userId === userId && v.postId === postId);
-  res.json({ positionSeconds: position?.positionSeconds || 0 });
-});
-
-app.get("/api/video-positions/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const positions = (data.videoPositions || []).filter(v => v.userId === userId);
-  const positionsMap = {};
-  positions.forEach(p => { positionsMap[p.postId] = p.positionSeconds; });
-  res.json({ positions: positionsMap });
 });
 
 // ============ FRIENDS ENDPOINTS ============
@@ -1014,73 +1111,486 @@ app.get('/api/users/search', (req, res) => {
   })));
 });
 
-// ============ CALENDAR REMINDERS ENDPOINTS ============
-app.get("/api/reminders/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.reminders) data.reminders = [];
-  const userReminders = data.reminders.filter(r => r.userId === userId);
-  res.json({ reminders: userReminders });
-});
+// ============ USER SETTINGS ENDPOINTS ============
 
-app.post("/api/reminders", (req, res) => {
-  const { userId, eventId, eventName, eventDate, reminderSet } = req.body;
-  if (!userId || !eventId) {
-    return res.status(400).json({ error: "userId and eventId required" });
-  }
-  if (!data.reminders) data.reminders = [];
-  const existingIndex = data.reminders.findIndex(r => r.userId === userId && r.eventId === eventId);
-  if (reminderSet) {
-    const reminderData = {
-      id: existingIndex !== -1 ? data.reminders[existingIndex].id : Date.now().toString(),
-      userId: parseInt(userId),
-      eventId,
-      eventName: eventName || null,
-      eventDate: eventDate || null,
-      reminderSet: true,
-      updatedAt: new Date().toISOString(),
-      createdAt: existingIndex !== -1 ? data.reminders[existingIndex].createdAt : new Date().toISOString()
-    };
-    if (existingIndex !== -1) {
-      data.reminders[existingIndex] = reminderData;
-    } else {
-      data.reminders.push(reminderData);
-    }
-  } else {
-    if (existingIndex !== -1) {
-      data.reminders.splice(existingIndex, 1);
-    }
-  }
+if (!data.userSettings) {
+  data.userSettings = {};
   saveData();
-  res.json({ success: true });
-});
+}
 
-app.delete("/api/reminders/:userId/:eventId", (req, res) => {
+if (!data.blockedUsers) {
+  data.blockedUsers = {};
+  saveData();
+}
+
+app.get('/api/user/settings/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
-  const { eventId } = req.params;
-  if (!data.reminders) data.reminders = [];
-  const index = data.reminders.findIndex(r => r.userId === userId && r.eventId === eventId);
-  if (index !== -1) {
-    data.reminders.splice(index, 1);
+  
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: {
+        darkMode: false,
+        primaryColor: '#6366f1'
+      },
+      privacy: {
+        birthdayVisibility: 'friends',
+        postVisibility: 'friends',
+        allowWishes: 'everyone',
+        allowTagging: 'friends'
+      },
+      notifications: {
+        enabled: true,
+        birthdayReminders: true,
+        friendRequests: true,
+        giftNotifications: true,
+        commentNotifications: true
+      }
+    };
     saveData();
   }
-  res.json({ success: true });
+  
+  res.json(data.userSettings[userId]);
 });
 
-// ============ COMPANY FEE ENDPOINTS ============
-app.get("/api/company/fees", (req, res) => {
+app.put('/api/user/settings/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { theme, privacy, notifications } = req.body;
+  
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+  }
+  
+  if (theme) {
+    data.userSettings[userId].theme = { ...data.userSettings[userId].theme, ...theme };
+  }
+  if (privacy) {
+    data.userSettings[userId].privacy = { ...data.userSettings[userId].privacy, ...privacy };
+  }
+  if (notifications) {
+    data.userSettings[userId].notifications = { ...data.userSettings[userId].notifications, ...notifications };
+  }
+  
+  saveData();
+  console.log(`✅ Settings updated for user ${userId}`);
+  res.json({ success: true, settings: data.userSettings[userId] });
+});
+
+app.get('/api/user/settings/:userId/theme', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.userSettings[userId]) {
+    return res.json({ darkMode: false, primaryColor: '#6366f1' });
+  }
+  
+  res.json(data.userSettings[userId].theme || { darkMode: false, primaryColor: '#6366f1' });
+});
+
+app.put('/api/user/settings/:userId/theme', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { darkMode, primaryColor } = req.body;
+  
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+  }
+  
+  if (darkMode !== undefined) {
+    data.userSettings[userId].theme.darkMode = darkMode;
+  }
+  if (primaryColor) {
+    data.userSettings[userId].theme.primaryColor = primaryColor;
+  }
+  
+  saveData();
+  console.log(`🎨 Theme updated for user ${userId}: darkMode=${darkMode}`);
+  res.json({ success: true, theme: data.userSettings[userId].theme });
+});
+
+// ============ BLOCKED USERS ENDPOINTS ============
+
+app.get('/api/user/blocked/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.blockedUsers[userId]) {
+    data.blockedUsers[userId] = [];
+    saveData();
+  }
+  
+  const blockedUserIds = data.blockedUsers[userId] || [];
+  const blockedUsers = data.users
+    .filter(u => blockedUserIds.includes(u.id))
+    .map(u => ({
+      id: u.id,
+      name: u.name,
+      username: u.username,
+      profileImage: u.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      reason: 'Blocked by user',
+      blockedAt: new Date().toISOString()
+    }));
+  
+  res.json({ blockedUsers });
+});
+
+app.post('/api/user/block/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { blockUserId } = req.body;
+  
+  if (!data.blockedUsers[userId]) {
+    data.blockedUsers[userId] = [];
+  }
+  
+  if (!data.blockedUsers[userId].includes(blockUserId)) {
+    data.blockedUsers[userId].push(blockUserId);
+    saveData();
+    console.log(`🚫 User ${userId} blocked user ${blockUserId}`);
+  }
+  
+  res.json({ success: true, blockedUsers: data.blockedUsers[userId] });
+});
+
+app.delete('/api/user/unblock/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { blockUserId } = req.body;
+  
+  if (data.blockedUsers[userId]) {
+    data.blockedUsers[userId] = data.blockedUsers[userId].filter(id => id !== blockUserId);
+    saveData();
+    console.log(`✅ User ${userId} unblocked user ${blockUserId}`);
+  }
+  
+  res.json({ success: true, blockedUsers: data.blockedUsers[userId] || [] });
+});
+
+// ============ NOTIFICATION PREFERENCES ENDPOINTS ============
+
+app.put('/api/user/notifications/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { enabled, birthdayReminders, friendRequests, giftNotifications, commentNotifications } = req.body;
+  
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+  }
+  
+  if (enabled !== undefined) data.userSettings[userId].notifications.enabled = enabled;
+  if (birthdayReminders !== undefined) data.userSettings[userId].notifications.birthdayReminders = birthdayReminders;
+  if (friendRequests !== undefined) data.userSettings[userId].notifications.friendRequests = friendRequests;
+  if (giftNotifications !== undefined) data.userSettings[userId].notifications.giftNotifications = giftNotifications;
+  if (commentNotifications !== undefined) data.userSettings[userId].notifications.commentNotifications = commentNotifications;
+  
+  saveData();
+  console.log(`🔔 Notification preferences updated for user ${userId}`);
+  res.json({ success: true, notifications: data.userSettings[userId].notifications });
+});
+
+// ============================================================
+// ✅ DELETE ACCOUNT - Real Backend Operation
+// ============================================================
+
+app.delete('/api/user/delete', verifyToken, (req, res) => {
+  const userId = req.userId;
+  
+  console.log(`🗑️ Deleting user account: ${userId}`);
+  
+  // Remove user
+  const userIndex = data.users.findIndex(u => u.id === userId);
+  if (userIndex !== -1) {
+    data.users.splice(userIndex, 1);
+  }
+  
+  // Remove wallet
+  delete data.wallets[userId];
+  
+  // Remove friendships
+  data.friendships = data.friendships.filter(f => 
+    f.userId !== userId && f.friendId !== userId
+  );
+  
+  // Remove friend requests
+  data.friendRequests = data.friendRequests.filter(r => 
+    r.fromUserId !== userId && r.toUserId !== userId
+  );
+  
+  // Remove posts
+  data.posts = data.posts.filter(p => p.userId !== userId);
+  
+  // Remove notifications
+  data.notifications = data.notifications.filter(n => n.userId !== userId);
+  
+  // Remove user settings
+  delete data.userSettings[userId];
+  
+  // Remove blocked users
+  delete data.blockedUsers[userId];
+  
+  // Remove follows
+  data.follows = data.follows.filter(f => 
+    f.followerId !== userId && f.followingId !== userId
+  );
+  
+  // Remove calendar events
+  delete data.calendarEvents[userId];
+  
+  saveData();
+  
+  console.log(`✅ User ${userId} deleted successfully`);
+  res.json({ success: true, message: 'Account deleted successfully' });
+});
+
+// ============================================================
+// ✅ FOLLOW/UNFOLLOW - REAL IMPLEMENTATION
+// ============================================================
+
+app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const followerId = req.userId;
+  
+  console.log(`👤 User ${followerId} following user ${userId}`);
+  
+  if (followerId === userId) {
+    return res.status(400).json({ error: 'Cannot follow yourself' });
+  }
+  
+  if (!data.follows) {
+    data.follows = [];
+  }
+  
+  const existing = data.follows.find(
+    f => f.followerId === followerId && f.followingId === userId
+  );
+  
+  if (!existing) {
+    data.follows.push({
+      id: Date.now().toString(),
+      followerId: followerId,
+      followingId: userId,
+      createdAt: new Date().toISOString()
+    });
+    saveData();
+    
+    const follower = data.users.find(u => u.id === followerId);
+    if (follower) {
+      addNotification(
+        userId,
+        'follow',
+        '👤 New Follower',
+        `${follower.name} started following you!`,
+        follower.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        followerId,
+        follower.name
+      );
+    }
+    
+    console.log(`✅ User ${followerId} now following ${userId}`);
+    res.json({ success: true, message: `Now following user ${userId}` });
+  } else {
+    res.json({ success: true, message: 'Already following' });
+  }
+});
+
+app.delete('/api/users/follow/:userId', verifyToken, (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const followerId = req.userId;
+  
+  console.log(`👤 User ${followerId} unfollowing user ${userId}`);
+  
+  if (data.follows) {
+    const initialLength = data.follows.length;
+    data.follows = data.follows.filter(
+      f => !(f.followerId === followerId && f.followingId === userId)
+    );
+    
+    if (data.follows.length < initialLength) {
+      saveData();
+      console.log(`✅ User ${followerId} unfollowed ${userId}`);
+      res.json({ success: true, message: `Unfollowed user ${userId}` });
+    } else {
+      res.json({ success: true, message: 'Not following this user' });
+    }
+  } else {
+    res.json({ success: true, message: 'Not following this user' });
+  }
+});
+
+// ============================================================
+// ✅ FOLLOWERS/FOLLOWING COUNTS
+// ============================================================
+
+app.get('/api/users/:userId/followers', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.follows) {
+    data.follows = [];
+  }
+  
+  const followers = data.follows.filter(f => f.followingId === userId);
+  
+  const followerDetails = followers.map(f => {
+    const user = data.users.find(u => u.id === f.followerId);
+    return user ? {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
+    } : null;
+  }).filter(Boolean);
+  
   res.json({ 
-    companyAccount: data.companyAccount, 
-    totalFees: data.companyAccount.totalFees, 
-    transactions: data.companyFees 
+    count: followerDetails.length, 
+    followers: followerDetails 
   });
 });
 
-// ============ ROOT ENDPOINT ============
-app.get("/", (req, res) => {
-  res.json({ message: "BirthdayApp API is running!" });
+app.get('/api/users/:userId/following', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.follows) {
+    data.follows = [];
+  }
+  
+  const following = data.follows.filter(f => f.followerId === userId);
+  
+  const followingDetails = following.map(f => {
+    const user = data.users.find(u => u.id === f.followingId);
+    return user ? {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
+    } : null;
+  }).filter(Boolean);
+  
+  res.json({ 
+    count: followingDetails.length, 
+    following: followingDetails 
+  });
 });
 
-// ============ START SERVER ============
+app.get('/api/users/:userId/is-following/:targetId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const targetId = parseInt(req.params.targetId);
+  
+  if (!data.follows) {
+    data.follows = [];
+  }
+  
+  const isFollowing = data.follows.some(
+    f => f.followerId === userId && f.followingId === targetId
+  );
+  
+  res.json({ isFollowing });
+});
+
+// ============================================================
+// ✅ GIFT HISTORY
+// ============================================================
+
+app.get('/api/gifts/received/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.giftTransactions) {
+    data.giftTransactions = [];
+  }
+  
+  const receivedGifts = data.giftTransactions.filter(
+    g => g.celebrantId === userId
+  );
+  
+  const formattedGifts = receivedGifts.map(g => ({
+    id: g.id,
+    giftName: g.giftName,
+    amount: g.giftAmount || g.amount || 0,
+    fromName: g.fromName || g.senderName || 'Someone',
+    date: g.date || g.createdAt || new Date().toISOString(),
+    status: 'completed',
+    icon: '🎁'
+  }));
+  
+  res.json({ 
+    gifts: formattedGifts, 
+    count: formattedGifts.length,
+    totalAmount: formattedGifts.reduce((sum, g) => sum + g.amount, 0)
+  });
+});
+
+app.get('/api/gifts/sent/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.giftTransactions) {
+    data.giftTransactions = [];
+  }
+  
+  const sentGifts = data.giftTransactions.filter(
+    g => g.senderId === userId || g.fromUserId === userId
+  );
+  
+  const formattedGifts = sentGifts.map(g => ({
+    id: g.id,
+    giftName: g.giftName,
+    amount: g.giftAmount || g.amount || 0,
+    toName: g.celebrantName || g.recipientName || 'Someone',
+    date: g.date || g.createdAt || new Date().toISOString(),
+    status: 'completed',
+    icon: '🎁'
+  }));
+  
+  res.json({ 
+    gifts: formattedGifts, 
+    count: formattedGifts.length,
+    totalAmount: formattedGifts.reduce((sum, g) => sum + g.amount, 0)
+  });
+});
+
+// ============================================================
+// ✅ PROFILE STATS (Posts, Followers, Following)
+// ============================================================
+
+app.get('/api/users/:userId/stats', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.follows) {
+    data.follows = [];
+  }
+  
+  if (!data.posts) {
+    data.posts = [];
+  }
+
+  const followers = data.follows.filter(f => f.followingId === userId).length;
+  const following = data.follows.filter(f => f.followerId === userId).length;
+  const posts = data.posts.filter(p => p.userId === userId).length;
+
+  const giftTransactions = data.giftTransactions || [];
+  const giftsReceived = giftTransactions.filter(g => g.celebrantId === userId).length;
+  const totalGiftAmount = giftTransactions
+    .filter(g => g.celebrantId === userId)
+    .reduce((sum, g) => sum + (g.giftAmount || g.amount || 0), 0);
+
+  res.json({
+    userId,
+    posts,
+    followers,
+    following,
+    giftsReceived,
+    totalGiftAmount
+  });
+});
+
+console.log('✅ Follow, Gift History, and Stats endpoints added!');
+
+// ============================================================
+// ✅ START SERVER
+// ============================================================
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`👥 Users: ${data.users.length}`);
@@ -1089,22 +1599,325 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
 });
 
-// ============ TEMPORARY: Reset Password Route ============
-app.post('/api/admin/reset-password', (req, res) => {
-  const { email, newPassword } = req.body;
-  console.log(`🔑 Resetting password for: ${email}`);
+console.log("✅ BACKEND index.js updated!");
+
+// ============================================================
+// ✅ BANNER ENDPOINTS
+// ============================================================
+
+// Track banner view
+app.post('/api/banners/:id/view', (req, res) => {
+  const { id } = req.params;
+  console.log(`📊 Banner view tracked: ${id}`);
   
-  const user = data.users.find(u => u.email === email);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+  // Check if banner exists in data
+  if (!data.banners) {
+    data.banners = [];
   }
   
-  user.password = newPassword;
-  user.password_hash = newPassword;
-  saveData();
+  const banner = data.banners.find(b => b.id === id);
+  if (banner) {
+    banner.views = (banner.views || 0) + 1;
+    saveData();
+  }
   
-  console.log(`✅ Password reset for ${email}`);
-  res.json({ success: true, message: `Password reset for ${email}` });
+  // Always return success even if banner not found (graceful fallback)
+  res.json({ success: true, message: 'View tracked' });
 });
 
-console.log("✅ BACKEND index.js updated with phone number support!");
+// Track banner click
+app.post('/api/banners/:id/click', (req, res) => {
+  const { id } = req.params;
+  console.log(`📊 Banner click tracked: ${id}`);
+  
+  if (!data.banners) {
+    data.banners = [];
+  }
+  
+  const banner = data.banners.find(b => b.id === id);
+  if (banner) {
+    banner.clicks = (banner.clicks || 0) + 1;
+    saveData();
+  }
+  
+  res.json({ success: true, message: 'Click tracked' });
+});
+
+// Get all banners
+app.get('/api/banners', (req, res) => {
+  if (!data.banners || data.banners.length === 0) {
+    // Return fallback banners
+    data.banners = [
+      {
+        id: 'banner_fallback_1',
+        title: '🎉 Today\'s Celebrations',
+        subtitle: 'Check out today\'s events!',
+        icon: '🎂',
+        colors: ['#6366f1', '#8b5cf6', '#a855f7'],
+        type: 'celebrations',
+        link: 'today',
+        active: true,
+        priority: 1,
+        views: 0,
+        clicks: 0,
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'banner_fallback_2',
+        title: '🎁 Gift Shop',
+        subtitle: 'Send a gift to someone special',
+        icon: '🎁',
+        colors: ['#ec4899', '#f472b6', '#f9a8d4'],
+        type: 'gifts',
+        link: 'gift_shop',
+        active: true,
+        priority: 2,
+        views: 0,
+        clicks: 0,
+        createdAt: new Date().toISOString()
+      }
+    ];
+    saveData();
+  }
+  
+  const activeBanners = data.banners.filter(b => b.active !== false);
+  res.json({ success: true, banners: activeBanners });
+});
+
+// ============================================================
+// ✅ BANNER ENDPOINTS
+// ============================================================
+
+// Initialize banners in data if not exists
+if (!data.banners) {
+  data.banners = [
+    {
+      id: 'banner_fallback_1',
+      title: '🎉 Today\'s Celebrations',
+      subtitle: 'Check out today\'s events!',
+      icon: '🎂',
+      colors: ['#6366f1', '#8b5cf6', '#a855f7'],
+      type: 'celebrations',
+      link: 'today',
+      active: true,
+      priority: 1,
+      views: 0,
+      clicks: 0,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'banner_fallback_2',
+      title: '🎁 Gift Shop',
+      subtitle: 'Send a gift to someone special',
+      icon: '🎁',
+      colors: ['#ec4899', '#f472b6', '#f9a8d4'],
+      type: 'gifts',
+      link: 'gift_shop',
+      active: true,
+      priority: 2,
+      views: 0,
+      clicks: 0,
+      createdAt: new Date().toISOString()
+    }
+  ];
+  saveData();
+  console.log('📊 Initialized fallback banners');
+}
+
+// GET /api/banners - Get all active banners
+app.get('/api/banners', (req, res) => {
+  const activeBanners = (data.banners || []).filter(b => b.active !== false);
+  console.log(`📊 Returning ${activeBanners.length} active banners`);
+  res.json({ success: true, banners: activeBanners });
+});
+
+// POST /api/banners/:id/view - Track banner view
+app.post('/api/banners/:id/view', (req, res) => {
+  const { id } = req.params;
+  console.log(`👁️ Banner view tracked: ${id}`);
+  
+  const banner = (data.banners || []).find(b => b.id === id);
+  if (banner) {
+    banner.views = (banner.views || 0) + 1;
+    saveData();
+    console.log(`  📊 Total views: ${banner.views}`);
+  } else {
+    console.log(`  ⚠️ Banner not found: ${id}`);
+  }
+  
+  res.json({ success: true, message: 'View tracked' });
+});
+
+// POST /api/banners/:id/click - Track banner click
+app.post('/api/banners/:id/click', (req, res) => {
+  const { id } = req.params;
+  console.log(`👆 Banner click tracked: ${id}`);
+  
+  const banner = (data.banners || []).find(b => b.id === id);
+  if (banner) {
+    banner.clicks = (banner.clicks || 0) + 1;
+    saveData();
+    console.log(`  📊 Total clicks: ${banner.clicks}`);
+  } else {
+    console.log(`  ⚠️ Banner not found: ${id}`);
+  }
+  
+  res.json({ success: true, message: 'Click tracked' });
+});
+
+// POST /api/banners - Create a new banner (Admin only)
+app.post('/api/banners', verifyToken, (req, res) => {
+  // Check if user is admin
+  const adminCheck = data.users.find(u => u.id === req.userId && u.role === 'admin');
+  if (!adminCheck) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  
+  const { title, subtitle, icon, colors, type, link, active, priority } = req.body;
+  
+  const newBanner = {
+    id: 'banner_' + Date.now(),
+    title: title || '🎉 New Banner',
+    subtitle: subtitle || 'Click to learn more',
+    icon: icon || '🎉',
+    colors: colors || ['#6366f1', '#8b5cf6', '#a855f7'],
+    type: type || 'general',
+    link: link || 'home',
+    active: active !== undefined ? active : true,
+    priority: priority || 1,
+    views: 0,
+    clicks: 0,
+    createdAt: new Date().toISOString()
+  };
+  
+  if (!data.banners) data.banners = [];
+  data.banners.push(newBanner);
+  saveData();
+  
+  console.log(`📊 New banner created: ${newBanner.title}`);
+  res.status(201).json({ success: true, banner: newBanner });
+});
+
+// DELETE /api/banners/:id - Delete a banner (Admin only)
+app.delete('/api/banners/:id', verifyToken, (req, res) => {
+  const adminCheck = data.users.find(u => u.id === req.userId && u.role === 'admin');
+  if (!adminCheck) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  
+  const { id } = req.params;
+  const index = (data.banners || []).findIndex(b => b.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Banner not found' });
+  }
+  
+  data.banners.splice(index, 1);
+  saveData();
+  console.log(`📊 Banner deleted: ${id}`);
+  res.json({ success: true });
+});
+
+// PUT /api/banners/:id - Update a banner (Admin only)
+app.put('/api/banners/:id', verifyToken, (req, res) => {
+  const adminCheck = data.users.find(u => u.id === req.userId && u.role === 'admin');
+  if (!adminCheck) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  
+  const { id } = req.params;
+  const banner = (data.banners || []).find(b => b.id === id);
+  if (!banner) {
+    return res.status(404).json({ error: 'Banner not found' });
+  }
+  
+  const { title, subtitle, icon, colors, type, link, active, priority } = req.body;
+  if (title !== undefined) banner.title = title;
+  if (subtitle !== undefined) banner.subtitle = subtitle;
+  if (icon !== undefined) banner.icon = icon;
+  if (colors !== undefined) banner.colors = colors;
+  if (type !== undefined) banner.type = type;
+  if (link !== undefined) banner.link = link;
+  if (active !== undefined) banner.active = active;
+  if (priority !== undefined) banner.priority = priority;
+  
+  saveData();
+  console.log(`📊 Banner updated: ${banner.title}`);
+  res.json({ success: true, banner });
+});
+
+// ============================================================
+// ✅ BANNER SYSTEM
+// ============================================================
+
+// Initialize banners in data if not exists
+if (!data.banners) {
+  data.banners = [
+    {
+      id: 'banner_fallback_1',
+      title: '🎉 Today\'s Celebrations',
+      subtitle: 'Check out today\'s events!',
+      icon: '🎂',
+      colors: ['#6366f1', '#8b5cf6', '#a855f7'],
+      type: 'celebrations',
+      link: 'today',
+      active: true,
+      priority: 1,
+      views: 0,
+      clicks: 0,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'banner_fallback_2',
+      title: '🎁 Gift Shop',
+      subtitle: 'Send a gift to someone special',
+      icon: '🎁',
+      colors: ['#ec4899', '#f472b6', '#f9a8d4'],
+      type: 'gifts',
+      link: 'gift_shop',
+      active: true,
+      priority: 2,
+      views: 0,
+      clicks: 0,
+      createdAt: new Date().toISOString()
+    }
+  ];
+  saveData();
+  console.log('📊 Initialized fallback banners');
+}
+
+// GET /api/banners - Get all active banners
+app.get('/api/banners', (req, res) => {
+  const activeBanners = (data.banners || []).filter(b => b.active !== false);
+  console.log(`📊 Returning ${activeBanners.length} active banners`);
+  res.json({ success: true, banners: activeBanners });
+});
+
+// POST /api/banners/:id/view - Track banner view
+app.post('/api/banners/:id/view', (req, res) => {
+  const { id } = req.params;
+  console.log(`👁️ Banner view tracked: ${id}`);
+  
+  const banner = (data.banners || []).find(b => b.id === id);
+  if (banner) {
+    banner.views = (banner.views || 0) + 1;
+    saveData();
+  }
+  
+  res.json({ success: true, message: 'View tracked' });
+});
+
+// POST /api/banners/:id/click - Track banner click
+app.post('/api/banners/:id/click', (req, res) => {
+  const { id } = req.params;
+  console.log(`👆 Banner click tracked: ${id}`);
+  
+  const banner = (data.banners || []).find(b => b.id === id);
+  if (banner) {
+    banner.clicks = (banner.clicks || 0) + 1;
+    saveData();
+  }
+  
+  res.json({ success: true, message: 'Click tracked' });
+});
+
+console.log('✅ Banner routes added!');
