@@ -2169,3 +2169,126 @@ app.put('/api/user/settings/:userId/media', (req, res) => {
 });
 
 console.log('✅ Media settings endpoints added!');
+
+// ============================================================
+// ✅ SUPPORT ENDPOINTS
+// ============================================================
+
+// Initialize support tickets in data
+if (!data.supportTickets) {
+  data.supportTickets = {};
+  saveData();
+}
+
+// POST /api/user/support/feedback - Submit feedback
+app.post('/api/user/support/feedback', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { feedback, email } = req.body;
+  
+  if (!feedback) {
+    return res.status(400).json({ error: 'Feedback is required' });
+  }
+  
+  if (!data.supportTickets) {
+    data.supportTickets = {};
+  }
+  
+  if (!data.supportTickets[userId]) {
+    data.supportTickets[userId] = [];
+  }
+  
+  const ticket = {
+    id: Date.now().toString(),
+    type: 'feedback',
+    feedback,
+    email: email || null,
+    userId,
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  };
+  
+  data.supportTickets[userId].push(ticket);
+  saveData();
+  
+  console.log(`📝 Feedback submitted by user ${userId}: ${feedback.substring(0, 50)}...`);
+  
+  // ✅ Add notification for support team (admin)
+  addNotification(
+    1, // Admin user ID
+    'system',
+    '📝 New Feedback Received',
+    `User ${user?.name || userId} submitted feedback: "${feedback.substring(0, 100)}..."`,
+    null,
+    ticket.id,
+    'Support'
+  );
+  
+  res.json({ success: true, ticket });
+});
+
+// GET /api/user/support/tickets/:userId - Get user's support tickets
+app.get('/api/user/support/tickets/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.supportTickets) {
+    data.supportTickets = {};
+  }
+  
+  if (!data.supportTickets[userId]) {
+    data.supportTickets[userId] = [];
+  }
+  
+  const tickets = data.supportTickets[userId].sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+  
+  res.json({ success: true, tickets });
+});
+
+// POST /api/user/support/contact - Contact us form
+app.post('/api/user/support/contact', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { subject, message } = req.body;
+  
+  if (!subject || !message) {
+    return res.status(400).json({ error: 'Subject and message are required' });
+  }
+  
+  if (!data.supportTickets) {
+    data.supportTickets = {};
+  }
+  
+  if (!data.supportTickets[userId]) {
+    data.supportTickets[userId] = [];
+  }
+  
+  const ticket = {
+    id: Date.now().toString(),
+    type: 'contact',
+    subject,
+    message,
+    userId,
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  };
+  
+  data.supportTickets[userId].push(ticket);
+  saveData();
+  
+  console.log(`📧 Contact message from user ${userId}: ${subject}`);
+  
+  // ✅ Add notification for support team (admin)
+  addNotification(
+    1, // Admin user ID
+    'system',
+    '📧 New Contact Message',
+    `User ${user?.name || userId} sent: "${subject}"`,
+    null,
+    ticket.id,
+    'Support'
+  );
+  
+  res.json({ success: true, ticket });
+});
+
+console.log('✅ Support endpoints added!');
