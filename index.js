@@ -2010,3 +2010,97 @@ app.post('/api/auth/change-password', verifyToken, async (req, res) => {
 });
 
 console.log('✅ Change password endpoint added!');
+
+// ============================================================
+// ✅ NOTIFICATION PREFERENCES - Full CRUD
+// ============================================================
+
+// GET /api/user/notifications/:userId - Get notification preferences
+app.get('/api/user/notifications/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.userSettings) {
+    data.userSettings = {};
+    saveData();
+  }
+  
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+    saveData();
+  }
+  
+  const notifPrefs = data.userSettings[userId].notifications || {
+    enabled: true,
+    birthdayReminders: true,
+    friendRequests: true,
+    giftNotifications: true,
+    commentNotifications: true
+  };
+  
+  res.json({ success: true, notifications: notifPrefs });
+});
+
+// ✅ Already have PUT /api/user/notifications/:userId - Update notification preferences
+// This endpoint already exists in your index.js
+
+console.log('✅ Notification preferences endpoints updated!');
+
+// ============================================================
+// ✅ DELETE ACCOUNT - Real Backend Operation
+// ============================================================
+
+app.delete('/api/user/delete', verifyToken, (req, res) => {
+  const userId = req.userId;
+  
+  console.log(`🗑️ Deleting user account: ${userId}`);
+  
+  // Remove user
+  const userIndex = data.users.findIndex(u => u.id === userId);
+  if (userIndex !== -1) {
+    data.users.splice(userIndex, 1);
+  }
+  
+  // Remove wallet
+  delete data.wallets[userId];
+  
+  // Remove friendships
+  data.friendships = data.friendships.filter(f => 
+    f.userId !== userId && f.friendId !== userId
+  );
+  
+  // Remove friend requests
+  data.friendRequests = data.friendRequests.filter(r => 
+    r.fromUserId !== userId && r.toUserId !== userId
+  );
+  
+  // Remove posts
+  data.posts = data.posts.filter(p => p.userId !== userId);
+  
+  // Remove notifications
+  data.notifications = data.notifications.filter(n => n.userId !== userId);
+  
+  // Remove user settings
+  delete data.userSettings[userId];
+  
+  // Remove blocked users
+  delete data.blockedUsers[userId];
+  
+  // Remove follows
+  data.follows = data.follows.filter(f => 
+    f.followerId !== userId && f.followingId !== userId
+  );
+  
+  // Remove calendar events
+  delete data.calendarEvents[userId];
+  
+  saveData();
+  
+  console.log(`✅ User ${userId} deleted successfully`);
+  res.json({ success: true, message: 'Account deleted successfully' });
+});
+
+console.log('✅ Delete account endpoint added!');
