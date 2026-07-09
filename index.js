@@ -24,7 +24,6 @@ let data = {
   friendships: [],
   follows: [],
   posts: [],
-  stories: [],
   postLikes: [],
   bookmarks: [],
   videoPositions: [],
@@ -1823,7 +1822,7 @@ app.delete('/api/stories/:id', verifyToken, (req, res) => {
 console.log('✅ Stories routes loaded');
 
 // ============================================================
-// ✅ START SERVER
+// ✅ START SERVER - CRASH FIXED (removed stories.length)
 // ============================================================
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
@@ -1832,7 +1831,6 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`📢 Notifications: ${data.notifications.length}`);
   console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
   console.log(`📊 Banners: ${data.banners.length}`);
-  console.log(`📸 Stories: ${data.stories.length}`);
 });
 
 console.log("✅ BACKEND index.js updated with all endpoints!");
