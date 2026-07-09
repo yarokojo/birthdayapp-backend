@@ -2802,3 +2802,236 @@ app.delete('/api/banners/:id', verifyToken, (req, res) => {
 });
 
 console.log('✅ Banner endpoints added!');
+
+// ============================================================
+// ✅ TRENDING ENDPOINTS
+// ============================================================
+
+// GET /api/posts/trending - Get trending posts
+app.get('/api/posts/trending', (req, res) => {
+  const { limit = 10, timeRange = 'week' } = req.query;
+  
+  if (!data.posts) {
+    data.posts = [];
+  }
+  
+  // Filter posts by time range
+  const now = new Date();
+  let filteredPosts = data.posts;
+  
+  if (timeRange === 'day') {
+    const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    filteredPosts = data.posts.filter(p => new Date(p.createdAt) >= dayAgo);
+  } else if (timeRange === 'week') {
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    filteredPosts = data.posts.filter(p => new Date(p.createdAt) >= weekAgo);
+  } else if (timeRange === 'month') {
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    filteredPosts = data.posts.filter(p => new Date(p.createdAt) >= monthAgo);
+  }
+  
+  // Calculate engagement score: likes + comments * 2 + reposts * 3
+  const scoredPosts = filteredPosts.map(post => {
+    const engagementScore = (post.likes || 0) + (post.comments || 0) * 2 + (post.reposts || 0) * 3;
+    return {
+      ...post,
+      engagementScore,
+      engagementRate: filteredPosts.length > 0 
+        ? Math.round((engagementScore / filteredPosts.length) * 100) / 100 
+        : 0
+    };
+  });
+  
+  // Sort by engagement score (highest first)
+  const trending = scoredPosts
+    .sort((a, b) => b.engagementScore - a.engagementScore)
+    .slice(0, parseInt(limit as string));
+  
+  res.json({
+    success: true,
+    posts: trending,
+    count: trending.length,
+    total: filteredPosts.length,
+    timeRange
+  });
+});
+
+// GET /api/posts/trending/hashtags - Get trending hashtags
+app.get('/api/posts/trending/hashtags', (req, res) => {
+  const { limit = 10 } = req.query;
+  
+  if (!data.posts) {
+    data.posts = [];
+  }
+  
+  // Extract hashtags from all posts
+  const hashtagMap: Record<string, { count: number; posts: string[] }> = {};
+  
+  data.posts.forEach(post => {
+    const hashtags = post.hashtags || [];
+    // Also extract from content
+    const contentHashtags = post.content?.match(/#[\w\u0590-\u05fe]+/g) || [];
+    const allHashtags = [...hashtags, ...contentHashtags];
+    
+    allHashtags.forEach(tag => {
+      const key = tag.toLowerCase();
+      if (!hashtagMap[key]) {
+        hashtagMap[key] = { count: 0, posts: [] };
+      }
+      hashtagMap[key].count += 1;
+      if (!hashtagMap[key].posts.includes(post.id)) {
+        hashtagMap[key].posts.push(post.id);
+      }
+    });
+  });
+  
+  // Convert to array and sort by count
+  const trendingHashtags = Object.entries(hashtagMap)
+    .map(([name, data]) => ({
+      name,
+      count: data.count,
+      postCount: data.posts.length,
+      icon: name.includes('birthday') ? '🎂' :
+            name.includes('party') ? '🥳' :
+            name.includes('love') ? '❤️' :
+            name.includes('gift') ? '🎁' :
+            name.includes('celebration') ? '🎉' :
+            '#' 
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, parseInt(limit as string));
+  
+  res.json({
+    success: true,
+    hashtags: trendingHashtags,
+    count: trendingHashtags.length
+  });
+});
+
+// GET /api/users/top - Get top users by engagement
+app.get('/api/users/top', (req, res) => {
+  const { limit = 5 } = req.query;
+  
+  if (!data.users || !data.posts) {
+    return res.json({ success: true, users: [] });
+  }
+  
+  // Calculate user engagement
+  const userEngagement: Record<number, { 
+    userId: number; 
+    name: string; 
+    username: string; 
+    avatar: string;
+    postCount: number;
+    totalLikes: number;
+    totalComments: number;
+    engagementScore: number;
+  }> = {};
+  
+  // Initialize all users
+  data.users.forEach(user => {
+    userEngagement[user.id] = {
+      userId: user.id,
+      name: user.name || 'Unknown',
+      username: user.username || '@user',
+      avatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      postCount: 0,
+      totalLikes: 0,
+      totalComments: 0,
+      engagementScore: 0
+    };
+  });
+  
+  // Calculate engagement from posts
+  data.posts.forEach(post => {
+    const userId = post.userId;
+    if (userId && userEngagement[userId]) {
+      userEngagement[userId].postCount += 1;
+      userEngagement[userId].totalLikes += post.likes || 0;
+      userEngagement[userId].totalComments += post.comments || 0;
+    }
+  });
+  
+  // Calculate engagement score
+  Object.values(userEngagement).forEach(user => {
+    userEngagement[user.userId].engagementScore = 
+      user.totalLikes + user.totalComments * 2 + user.postCount * 5;
+  });
+  
+  // Sort by engagement score
+  const topUsers = Object.values(userEngagement)
+    .filter(u => u.postCount > 0)
+    .sort((a, b) => b.engagementScore - a.engagementScore)
+    .slice(0, parseInt(limit as string));
+  
+  res.json({
+    success: true,
+    users: topUsers,
+    count: topUsers.length
+  });
+});
+
+// GET /api/posts/stats - Get post statistics
+app.get('/api/posts/stats', (req, res) => {
+  if (!data.posts) {
+    data.posts = [];
+  }
+  
+  const totalPosts = data.posts.length;
+  const totalLikes = data.posts.reduce((sum, p) => sum + (p.likes || 0), 0);
+  const totalComments = data.posts.reduce((sum, p) => sum + (p.comments || 0), 0);
+  const totalReposts = data.posts.reduce((sum, p) => sum + (p.reposts || 0), 0);
+  const totalViews = data.posts.reduce((sum, p) => sum + (p.views || 0), 0);
+  
+  // Birthday posts
+  const birthdayPosts = data.posts.filter(p => p.isBirthday || p.celebrationType === 'birthday');
+  
+  // Posts from today
+  const today = new Date();
+  const todayPosts = data.posts.filter(p => {
+    const postDate = new Date(p.createdAt);
+    return postDate.getDate() === today.getDate() &&
+           postDate.getMonth() === today.getMonth() &&
+           postDate.getFullYear() === today.getFullYear();
+  });
+  
+  // Posts from this week
+  const weekAgo = new Date(today);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekPosts = data.posts.filter(p => new Date(p.createdAt) >= weekAgo);
+  
+  // Top post
+  const topPost = data.posts
+    .map(p => ({ ...p, engagement: (p.likes || 0) + (p.comments || 0) * 2 }))
+    .sort((a, b) => b.engagement - a.engagement)[0];
+  
+  // Average engagement
+  const avgEngagement = totalPosts > 0 
+    ? Math.round((totalLikes + totalComments * 2) / totalPosts) 
+    : 0;
+  
+  res.json({
+    success: true,
+    stats: {
+      totalPosts,
+      totalLikes,
+      totalComments,
+      totalReposts,
+      totalViews,
+      birthdayCount: birthdayPosts.length,
+      todayPosts: todayPosts.length,
+      weekPosts: weekPosts.length,
+      avgEngagement,
+      topPost: topPost ? {
+        id: topPost.id,
+        content: topPost.content,
+        authorName: topPost.authorName,
+        likes: topPost.likes,
+        comments: topPost.comments,
+        engagement: topPost.engagement
+      } : null
+    }
+  });
+});
+
+console.log('✅ Trending endpoints added!');
