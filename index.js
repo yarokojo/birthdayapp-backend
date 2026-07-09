@@ -2556,3 +2556,249 @@ app.delete('/api/stories/:id', verifyToken, (req, res) => {
 });
 
 console.log('✅ Stories endpoints added!');
+
+// ============================================================
+// ✅ BANNER ENDPOINTS
+// ============================================================
+
+// Initialize banners in data
+if (!data.banners) {
+  data.banners = [
+    {
+      id: 'banner_1',
+      title: '🎉 Today\'s Celebrations',
+      subtitle: '3 birthdays today!',
+      icon: '🎂',
+      colors: ['#6366f1', '#8b5cf6', '#a855f7'],
+      type: 'celebrations',
+      active: true,
+      priority: 1,
+      link: 'today',
+      views: 0,
+      clicks: 0,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'banner_2',
+      title: '🎁 Gift Shop',
+      subtitle: 'Send a gift to someone special',
+      icon: '🎁',
+      colors: ['#ec4899', '#f472b6', '#f9a8d4'],
+      type: 'gifts',
+      active: true,
+      priority: 2,
+      link: 'gift_shop',
+      views: 0,
+      clicks: 0,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'banner_3',
+      title: '👥 Friends',
+      subtitle: 'You have 5 friend requests',
+      icon: '👥',
+      colors: ['#10b981', '#34d399', '#6ee7b7'],
+      type: 'friends',
+      active: true,
+      priority: 3,
+      link: 'friends',
+      views: 0,
+      clicks: 0,
+      createdAt: new Date().toISOString()
+    }
+  ];
+  saveData();
+}
+
+// GET /api/banners - Get all active banners
+app.get('/api/banners', (req, res) => {
+  if (!data.banners) {
+    data.banners = [];
+  }
+  
+  // Get user ID from token if available
+  let userId = null;
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (token) {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+      userId = decoded.userId;
+    }
+  } catch (err) {
+    // User not authenticated, that's fine
+  }
+  
+  // Filter active banners and sort by priority
+  const activeBanners = data.banners
+    .filter(b => b.active !== false)
+    .sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  
+  // Log view for each banner (async, don't wait)
+  activeBanners.forEach(banner => {
+    banner.views = (banner.views || 0) + 1;
+  });
+  saveData();
+  
+  res.json({
+    success: true,
+    banners: activeBanners,
+    count: activeBanners.length
+  });
+});
+
+// GET /api/banners/:id - Get single banner
+app.get('/api/banners/:id', (req, res) => {
+  const { id } = req.params;
+  
+  if (!data.banners) {
+    data.banners = [];
+  }
+  
+  const banner = data.banners.find(b => b.id === id);
+  if (!banner) {
+    return res.status(404).json({ error: 'Banner not found' });
+  }
+  
+  res.json({ success: true, banner });
+});
+
+// POST /api/banners/:id/click - Track banner click
+app.post('/api/banners/:id/click', (req, res) => {
+  const { id } = req.params;
+  
+  if (!data.banners) {
+    data.banners = [];
+  }
+  
+  const banner = data.banners.find(b => b.id === id);
+  if (!banner) {
+    return res.status(404).json({ error: 'Banner not found' });
+  }
+  
+  banner.clicks = (banner.clicks || 0) + 1;
+  saveData();
+  
+  console.log(`📊 Banner ${id} clicked: ${banner.clicks} total clicks`);
+  res.json({ success: true, clicks: banner.clicks });
+});
+
+// POST /api/banners/:id/view - Track banner view
+app.post('/api/banners/:id/view', (req, res) => {
+  const { id } = req.params;
+  
+  if (!data.banners) {
+    data.banners = [];
+  }
+  
+  const banner = data.banners.find(b => b.id === id);
+  if (!banner) {
+    return res.status(404).json({ error: 'Banner not found' });
+  }
+  
+  banner.views = (banner.views || 0) + 1;
+  saveData();
+  
+  res.json({ success: true, views: banner.views });
+});
+
+// Admin: POST /api/banners - Create a new banner (admin only)
+app.post('/api/banners', verifyToken, (req, res) => {
+  const { title, subtitle, icon, colors, type, link, priority } = req.body;
+  
+  // Check if user is admin (simplified - check user role)
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  
+  if (!title || !subtitle) {
+    return res.status(400).json({ error: 'Title and subtitle are required' });
+  }
+  
+  if (!data.banners) {
+    data.banners = [];
+  }
+  
+  const newBanner = {
+    id: `banner_${Date.now()}`,
+    title,
+    subtitle,
+    icon: icon || '🎉',
+    colors: colors || ['#6366f1', '#8b5cf6', '#a855f7'],
+    type: type || 'general',
+    link: link || null,
+    priority: priority || 99,
+    active: true,
+    views: 0,
+    clicks: 0,
+    createdAt: new Date().toISOString()
+  };
+  
+  data.banners.push(newBanner);
+  saveData();
+  
+  console.log(`📢 New banner created: ${title}`);
+  res.status(201).json({ success: true, banner: newBanner });
+});
+
+// Admin: PUT /api/banners/:id - Update banner (admin only)
+app.put('/api/banners/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const { title, subtitle, icon, colors, type, link, priority, active } = req.body;
+  
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  
+  if (!data.banners) {
+    data.banners = [];
+  }
+  
+  const bannerIndex = data.banners.findIndex(b => b.id === id);
+  if (bannerIndex === -1) {
+    return res.status(404).json({ error: 'Banner not found' });
+  }
+  
+  const banner = data.banners[bannerIndex];
+  if (title) banner.title = title;
+  if (subtitle) banner.subtitle = subtitle;
+  if (icon) banner.icon = icon;
+  if (colors) banner.colors = colors;
+  if (type) banner.type = type;
+  if (link) banner.link = link;
+  if (priority !== undefined) banner.priority = priority;
+  if (active !== undefined) banner.active = active;
+  
+  saveData();
+  
+  console.log(`📢 Banner ${id} updated`);
+  res.json({ success: true, banner });
+});
+
+// Admin: DELETE /api/banners/:id - Delete banner (admin only)
+app.delete('/api/banners/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  
+  if (!data.banners) {
+    data.banners = [];
+  }
+  
+  const bannerIndex = data.banners.findIndex(b => b.id === id);
+  if (bannerIndex === -1) {
+    return res.status(404).json({ error: 'Banner not found' });
+  }
+  
+  data.banners.splice(bannerIndex, 1);
+  saveData();
+  
+  console.log(`🗑️ Banner ${id} deleted`);
+  res.json({ success: true });
+});
+
+console.log('✅ Banner endpoints added!');
