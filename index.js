@@ -4,7 +4,6 @@ const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
 const jwt = require('jsonwebtoken');
-const paymentService = require('./services/payment');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -1823,10 +1822,10 @@ app.delete('/api/stories/:id', verifyToken, (req, res) => {
 console.log('✅ Stories routes loaded');
 
 // ============================================================
-// ✅ PAYMENT ENDPOINTS
+// ✅ PAYMENT ENDPOINTS - TEST MODE (No paymentService needed)
 // ============================================================
 
-// Initialize payment
+// Initialize payment (TEST MODE)
 app.post('/api/payment/initialize', async (req, res) => {
   try {
     const { amount, email, phone, name, giftName } = req.body;
@@ -1835,31 +1834,22 @@ app.post('/api/payment/initialize', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    const result = await paymentService.initializeMobileMoneyPayment(
-      parseFloat(amount),
-      email,
-      phone,
-      name,
-      giftName
-    );
+    // For testing - simulate payment
+    const reference = 'MOMO_' + Date.now();
     
-    if (result.success) {
-      res.json({
-        success: true,
-        authorization_url: result.authorization_url,
-        reference: result.reference,
-        message: result.message || 'Check your phone for payment prompt'
-      });
-    } else {
-      res.status(400).json({ error: result.error });
-    }
+    res.json({
+      success: true,
+      authorization_url: 'https://checkout.paystack.com/' + reference,
+      reference: reference,
+      message: 'Test payment initialized successfully'
+    });
   } catch (error) {
     console.error('Payment init error:', error);
     res.status(500).json({ error: 'Payment initialization failed' });
   }
 });
 
-// Verify payment
+// Verify payment (TEST MODE)
 app.get('/api/payment/verify', async (req, res) => {
   try {
     const { reference } = req.query;
@@ -1868,20 +1858,25 @@ app.get('/api/payment/verify', async (req, res) => {
       return res.status(400).json({ error: 'Reference required' });
     }
     
-    const result = await paymentService.verifyPayment(reference);
-    
-    if (result.success) {
-      res.json({ success: true, transaction: result });
-    } else {
-      res.status(400).json({ error: result.error });
-    }
+    // For testing - simulate verification
+    res.json({
+      success: true,
+      transaction: {
+        amount: 100,
+        gift_name: 'Gold Bar',
+        customer_name: 'Test User',
+        transaction_id: Date.now(),
+        reference: reference,
+        status: 'success'
+      }
+    });
   } catch (error) {
     console.error('Payment verify error:', error);
     res.status(500).json({ error: 'Payment verification failed' });
   }
 });
 
-console.log('✅ Payment routes loaded');
+console.log('✅ Payment routes loaded (TEST MODE)');
 
 // ============================================================
 // ✅ START SERVER
