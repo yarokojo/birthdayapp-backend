@@ -4,6 +4,7 @@ const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
 const jwt = require('jsonwebtoken');
+const paymentService = require('./services/payment');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -1822,7 +1823,68 @@ app.delete('/api/stories/:id', verifyToken, (req, res) => {
 console.log('✅ Stories routes loaded');
 
 // ============================================================
-// ✅ START SERVER - CRASH FIXED (removed stories.length)
+// ✅ PAYMENT ENDPOINTS
+// ============================================================
+
+// Initialize payment
+app.post('/api/payment/initialize', async (req, res) => {
+  try {
+    const { amount, email, phone, name, giftName } = req.body;
+    
+    if (!amount || !email || !phone || !name) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    const result = await paymentService.initializeMobileMoneyPayment(
+      parseFloat(amount),
+      email,
+      phone,
+      name,
+      giftName
+    );
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        authorization_url: result.authorization_url,
+        reference: result.reference,
+        message: result.message || 'Check your phone for payment prompt'
+      });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('Payment init error:', error);
+    res.status(500).json({ error: 'Payment initialization failed' });
+  }
+});
+
+// Verify payment
+app.get('/api/payment/verify', async (req, res) => {
+  try {
+    const { reference } = req.query;
+    
+    if (!reference) {
+      return res.status(400).json({ error: 'Reference required' });
+    }
+    
+    const result = await paymentService.verifyPayment(reference);
+    
+    if (result.success) {
+      res.json({ success: true, transaction: result });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('Payment verify error:', error);
+    res.status(500).json({ error: 'Payment verification failed' });
+  }
+});
+
+console.log('✅ Payment routes loaded');
+
+// ============================================================
+// ✅ START SERVER
 // ============================================================
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
