@@ -2292,3 +2292,267 @@ app.post('/api/user/support/contact', verifyToken, (req, res) => {
 });
 
 console.log('✅ Support endpoints added!');
+
+// ============================================================
+// ✅ STORIES ENDPOINTS - Full Implementation
+// ============================================================
+
+// Initialize stories in data
+if (!data.stories) {
+  data.stories = [];
+  saveData();
+}
+
+// Initialize seen stories
+if (!data.seenStories) {
+  data.seenStories = {};
+  saveData();
+}
+
+// Initialize story likes
+if (!data.storyLikes) {
+  data.storyLikes = {};
+  saveData();
+}
+
+// GET /api/stories - Get all stories (only from followed users + public)
+app.get('/api/stories', verifyToken, (req, res) => {
+  const userId = req.userId;
+  
+  if (!data.stories) {
+    data.stories = [];
+  }
+  
+  // Get followed users
+  const followed = (data.follows || [])
+    .filter(f => f.followerId === userId)
+    .map(f => f.followingId);
+  
+  // Get user's own stories and followed users' stories
+  const userStories = data.stories.filter(story => {
+    // Own stories
+    if (story.userId === userId) return true;
+    // Followed users' stories
+    if (followed.includes(story.userId)) return true;
+    // Public stories (if privacy is public)
+    if (story.privacy === 'public') return true;
+    return false;
+  });
+  
+  // Sort by newest first
+  const sorted = userStories.sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+  
+  // Mark expired stories (older than 24 hours)
+  const now = new Date();
+  sorted.forEach(story => {
+    const createdAt = new Date(story.createdAt);
+    const hoursSince = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+    if (hoursSince > 24) {
+      story.expired = true;
+    }
+  });
+  
+  res.json({ 
+    success: true, 
+    stories: sorted.filter(s => !s.expired),
+    count: sorted.filter(s => !s.expired).length
+  });
+});
+
+// POST /api/stories - Create a new story
+app.post('/api/stories', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { contentUrl, isVideo, caption, privacy = 'friends' } = req.body;
+  
+  if (!contentUrl) {
+    return res.status(400).json({ error: 'Content URL is required' });
+  }
+  
+  if (!data.stories) {
+    data.stories = [];
+  }
+  
+  const user = data.users.find(u => u.id === userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  
+  const newStory = {
+    id: Date.now().toString(),
+    userId,
+    userName: user.name,
+    userAvatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    contentUrl,
+    isVideo: isVideo || false,
+    caption: caption || null,
+    privacy: privacy || 'friends',
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    likes: 0,
+    viewers: 0,
+    seen: false,
+    liked: false
+  };
+  
+  data.stories.unshift(newStory);
+  saveData();
+  
+  console.log(`📸 Story created by user ${userId}: ${contentUrl.substring(0, 50)}...`);
+  
+  // Notify followers
+  const followers = (data.follows || [])
+    .filter(f => f.followingId === userId)
+    .map(f => f.followerId);
+  
+  followers.forEach(followerId => {
+    addNotification(
+      followerId,
+      'story',
+      '📸 New Story',
+      `${user.name} posted a new story!`,
+      user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      newStory.id,
+      user.name
+    );
+  });
+  
+  res.status(201).json({ success: true, story: newStory });
+});
+
+// POST /api/stories/seen - Mark a story as seen
+app.post('/api/stories/seen', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { storyId } = req.body;
+  
+  if (!storyId) {
+    return res.status(400).json({ error: 'Story ID is required' });
+  }
+  
+  if (!data.seenStories) {
+    data.seenStories = {};
+  }
+  
+  if (!data.seenStories[userId]) {
+    data.seenStories[userId] = [];
+  }
+  
+  if (!data.seenStories[userId].includes(storyId)) {
+    data.seenStories[userId].push(storyId);
+    saveData();
+    
+    // Increment viewers count
+    const story = data.stories.find(s => s.id === storyId);
+    if (story) {
+      story.viewers = (story.viewers || 0) + 1;
+      saveData();
+    }
+  }
+  
+  res.json({ success: true });
+});
+
+// GET /api/stories/seen/:userId - Get seen stories for a user
+app.get('/api/stories/seen/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  
+  if (!data.seenStories) {
+    data.seenStories = {};
+  }
+  
+  const seenStoryIds = data.seenStories[userId] || [];
+  
+  res.json({ 
+    success: true, 
+    seenStoryIds,
+    count: seenStoryIds.length
+  });
+});
+
+// POST /api/stories/:id/like - Like a story
+app.post('/api/stories/:id/like', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const storyId = req.params.id;
+  
+  const story = data.stories.find(s => s.id === storyId);
+  if (!story) {
+    return res.status(404).json({ error: 'Story not found' });
+  }
+  
+  if (!data.storyLikes) {
+    data.storyLikes = {};
+  }
+  
+  if (!data.storyLikes[storyId]) {
+    data.storyLikes[storyId] = [];
+  }
+  
+  if (!data.storyLikes[storyId].includes(userId)) {
+    data.storyLikes[storyId].push(userId);
+    story.likes = (story.likes || 0) + 1;
+    saveData();
+    
+    // Notify the story owner
+    if (story.userId !== userId) {
+      const user = data.users.find(u => u.id === userId);
+      addNotification(
+        story.userId,
+        'like',
+        '❤️ Story Liked',
+        `${user?.name || 'Someone'} liked your story!`,
+        user?.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        storyId,
+        story.userName
+      );
+    }
+  }
+  
+  res.json({ success: true, likes: story.likes });
+});
+
+// DELETE /api/stories/:id/like - Unlike a story
+app.delete('/api/stories/:id/like', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const storyId = req.params.id;
+  
+  const story = data.stories.find(s => s.id === storyId);
+  if (!story) {
+    return res.status(404).json({ error: 'Story not found' });
+  }
+  
+  if (data.storyLikes && data.storyLikes[storyId]) {
+    const index = data.storyLikes[storyId].indexOf(userId);
+    if (index !== -1) {
+      data.storyLikes[storyId].splice(index, 1);
+      story.likes = Math.max(0, (story.likes || 0) - 1);
+      saveData();
+    }
+  }
+  
+  res.json({ success: true, likes: story.likes });
+});
+
+// DELETE /api/stories/:id - Delete a story (only owner can delete)
+app.delete('/api/stories/:id', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const storyId = req.params.id;
+  
+  const storyIndex = data.stories.findIndex(s => s.id === storyId);
+  if (storyIndex === -1) {
+    return res.status(404).json({ error: 'Story not found' });
+  }
+  
+  const story = data.stories[storyIndex];
+  if (story.userId !== userId) {
+    return res.status(403).json({ error: 'Not authorized to delete this story' });
+  }
+  
+  data.stories.splice(storyIndex, 1);
+  saveData();
+  
+  console.log(`🗑️ Story ${storyId} deleted by user ${userId}`);
+  res.json({ success: true });
+});
+
+console.log('✅ Stories endpoints added!');
