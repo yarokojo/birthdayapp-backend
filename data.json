@@ -64,6 +64,19 @@
       "phone": "",
       "network": "",
       "created_at": "2026-07-08T19:48:09.966Z"
+    },
+    {
+      "id": 7,
+      "email": "feliciayaro@gmail.com",
+      "name": "Felicial Yaro",
+      "username": "feli",
+      "birthDate": "1989-10-02",
+      "phone": "0596270302",
+      "network": "MTN",
+      "created_at": "2026-07-09T00:43:04.213Z",
+      "profileImage": "file:///data/user/0/host.exp.exponent/cache/ImagePicker/8eb56e70-4190-410e-9715-d78fb4f1ab57.jpeg",
+      "bio": "",
+      "location": ""
     }
   ],
   "posts": [
@@ -254,6 +267,10 @@
     "6": {
       "balance": 0,
       "transactions": []
+    },
+    "7": {
+      "balance": 0,
+      "transactions": []
     }
   },
   "notifications": [
@@ -314,5 +331,43 @@
       }
     }
   },
-  "blockedUsers": {}
+  "blockedUsers": {},
+  "calendarEvents": {
+    "6": [
+      {
+        "id": "1783557484850",
+        "title": "🎂 Yaro Edward Kojo's Birthday",
+        "date": "2026-06-28",
+        "type": "birthday",
+        "celebrantName": "Yaro Edward Kojo",
+        "celebrantId": 1,
+        "userId": 6,
+        "reminderSet": false,
+        "createdAt": "2026-07-09T00:38:04.850Z"
+      },
+      {
+        "id": "1783557484872",
+        "title": "🎂 John Doe's Birthday",
+        "date": "2026-06-28",
+        "type": "birthday",
+        "celebrantName": "John Doe",
+        "celebrantId": 2,
+        "userId": 6,
+        "reminderSet": false,
+        "createdAt": "2026-07-09T00:38:04.872Z"
+      },
+      {
+        "id": "1783557484896",
+        "title": "🎂 Sarah Johnson's Birthday",
+        "date": "2026-06-27",
+        "type": "birthday",
+        "celebrantName": "Sarah Johnson",
+        "celebrantId": 3,
+        "userId": 6,
+        "reminderSet": false,
+        "createdAt": "2026-07-09T00:38:04.896Z"
+      }
+    ],
+    "NaN": []
+  }
 }
