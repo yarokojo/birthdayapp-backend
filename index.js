@@ -67,7 +67,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({
+const upload = multer({ 
   storage: storage,
   limits: { fileSize: 100 * 1024 * 1024 }
 });
@@ -130,8 +130,10 @@ const recordTransaction = (userId, type, amount, description, referenceId = null
   saveData();
 };
 
+// ✅ NOTIFICATION HELPER
 const addNotification = (userId, type, title, message, imageUrl = null, targetId = null, targetName = null, extraData = {}) => {
   console.log(`📨 Creating notification for user ${userId}: ${title}`);
+  
   const newNotification = {
     id: Date.now().toString(),
     userId: parseInt(userId),
@@ -145,9 +147,11 @@ const addNotification = (userId, type, title, message, imageUrl = null, targetId
     isRead: false,
     createdAt: new Date().toISOString()
   };
+  
   if (!data.notifications) data.notifications = [];
   data.notifications.unshift(newNotification);
   saveData();
+  
   console.log(`✅ Notification created: ${newNotification.id}`);
   return newNotification;
 };
@@ -192,24 +196,27 @@ app.post("/api/auth/register", (req, res) => {
   if (!birthDate) {
     return res.status(400).json({ error: 'Birth date is required' });
   }
-  const newUser = {
-    id: data.users.length + 1,
-    email: normalizedEmail,
-    name,
+  const newUser = { 
+    id: data.users.length + 1, 
+    email: normalizedEmail, 
+    name, 
     username,
     birthDate: birthDate || null,
     phone: req.body.phone || '',
     network: req.body.network || '',
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString() 
   };
   data.users.push(newUser);
+  
   data.wallets[newUser.id] = { balance: 0, transactions: [] };
   saveData();
+  
   const token = jwt.sign(
     { userId: newUser.id, email: newUser.email },
     process.env.JWT_SECRET || 'your_jwt_secret_key',
     { expiresIn: '7d' }
   );
+  
   res.json({ token, user: { id: newUser.id, email: newUser.email, name, username, birthDate: newUser.birthDate } });
 });
 
@@ -218,11 +225,13 @@ app.post("/api/auth/login", (req, res) => {
   const normalizedEmail = email.toLowerCase();
   const user = data.users.find(u => u.email === normalizedEmail);
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
+  
   const token = jwt.sign(
     { userId: user.id, email: user.email },
     process.env.JWT_SECRET || 'your_jwt_secret_key',
     { expiresIn: '7d' }
   );
+  
   res.json({ token, user: { id: user.id, email: user.email, name: user.name, username: user.username, birthDate: user.birthDate } });
 });
 
@@ -231,24 +240,35 @@ app.post('/api/auth/change-password', verifyToken, async (req, res) => {
   try {
     const userId = req.userId;
     const { currentPassword, newPassword } = req.body;
+    
+    console.log(`🔑 Password change request for user ${userId}`);
+    
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'Current and new password required' });
     }
+    
     if (newPassword.length < 6) {
       return res.status(400).json({ error: 'New password must be at least 6 characters' });
     }
+    
     const user = data.users.find(u => u.id === userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+    
     const bcrypt = require('bcryptjs');
     const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+    console.log(`🔍 Password comparison result: ${isValid}`);
+    
     if (!isValid) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
+    
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password_hash = hashedPassword;
     saveData();
+    
+    console.log(`✅ Password changed for user ${userId}`);
     res.json({ success: true, message: 'Password changed successfully' });
   } catch (error) {
     console.error('❌ Password change error:', error);
@@ -264,12 +284,15 @@ app.get('/api/users/profile', (req, res) => {
   if (!token) {
     return res.status(401).json({ error: 'No token provided' });
   }
+  
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
     const user = data.users.find(u => u.id === decoded.userId);
+    
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+    
     res.json({
       id: user.id,
       name: user.name,
@@ -292,17 +315,30 @@ app.get('/api/users/profile', (req, res) => {
 // ✅ PUT /api/users/profile - UPDATE PROFILE
 // ============================================================
 app.put('/api/users/profile', (req, res) => {
+  console.log('📝 PUT /api/users/profile');
+  console.log('📝 Request body:', req.body);
+  
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) {
+    console.log('❌ No token provided');
     return res.status(401).json({ error: 'No token provided' });
   }
+  
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    console.log('👤 User ID from token:', decoded.userId);
+    
     const userIndex = data.users.findIndex(u => u.id === decoded.userId);
+    
     if (userIndex === -1) {
+      console.log('❌ User not found:', decoded.userId);
       return res.status(404).json({ error: 'User not found' });
     }
+    
     const { name, bio, location, username, profileImage, phone, network, birthDate } = req.body;
+    
+    console.log('📝 Updating user:', { id: decoded.userId, name, phone, network });
+    
     if (name !== undefined) data.users[userIndex].name = name;
     if (bio !== undefined) data.users[userIndex].bio = bio;
     if (location !== undefined) data.users[userIndex].location = location;
@@ -311,7 +347,11 @@ app.put('/api/users/profile', (req, res) => {
     if (phone !== undefined) data.users[userIndex].phone = phone;
     if (network !== undefined) data.users[userIndex].network = network;
     if (birthDate !== undefined) data.users[userIndex].birthDate = birthDate;
+    
     saveData();
+    
+    console.log('✅ Profile updated for user:', data.users[userIndex].id);
+    
     const updatedUser = data.users[userIndex];
     res.json({
       id: updatedUser.id,
@@ -327,27 +367,34 @@ app.put('/api/users/profile', (req, res) => {
       createdAt: updatedUser.created_at
     });
   } catch (err) {
+    console.error('❌ Profile update error:', err);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
 
-// ============ FRIENDS LIST ============
+// ============ FRIENDS LIST - WITH PHONE NUMBER ============
 app.get('/api/friends/list/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
+  console.log(`👥 GET /api/friends/list/${userId}`);
+  
   const friendships = data.friendships.filter(f => f.userId === userId);
-  const friends = friendships.map(f => {
-    const friend = data.users.find(u => u.id === f.friendId);
-    if (!friend) return null;
-    return {
-      id: friend.id,
-      name: friend.name,
-      username: friend.username,
-      profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-      birthDate: friend.birthDate || null,
-      phone: friend.phone || '',
-      network: friend.network || 'MTN'
-    };
-  }).filter(Boolean);
+  const friends = friendships
+    .map(f => {
+      const friend = data.users.find(u => u.id === f.friendId);
+      if (!friend) return null;
+      return {
+        id: friend.id,
+        name: friend.name,
+        username: friend.username,
+        profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        birthDate: friend.birthDate || null,
+        phone: friend.phone || '',
+        network: friend.network || 'MTN'
+      };
+    })
+    .filter(Boolean);
+  
+  console.log(`  ✅ Found ${friends.length} friends with phone numbers`);
   res.json({ friends });
 });
 
@@ -355,11 +402,13 @@ app.get('/api/friends/list/:userId', (req, res) => {
 app.get('/api/wallet/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const wallet = data.wallets[userId];
+  
   if (!wallet) {
     data.wallets[userId] = { balance: 0, transactions: [] };
     saveData();
     return res.json({ balance: 0, transactions: [] });
   }
+  
   res.json({
     balance: wallet.balance || 0,
     transactions: wallet.transactions || []
@@ -375,12 +424,15 @@ app.get('/api/wallet/balance/:userId', (req, res) => {
 app.post('/api/wallet/add-funds', (req, res) => {
   const { userId, amount, description, referenceId } = req.body;
   const userIdNum = parseInt(userId);
+  
   if (!userId || !amount) {
     return res.status(400).json({ error: 'userId and amount required' });
   }
+  
   if (!data.wallets[userIdNum]) {
     data.wallets[userIdNum] = { balance: 0, transactions: [] };
   }
+  
   const newBalance = data.wallets[userIdNum].balance + parseFloat(amount);
   data.wallets[userIdNum].balance = newBalance;
   data.wallets[userIdNum].transactions.unshift({
@@ -392,21 +444,27 @@ app.post('/api/wallet/add-funds', (req, res) => {
     date: new Date().toISOString()
   });
   saveData();
+  
+  console.log(`💰 Added ₵${amount} to wallet for user ${userId}`);
   res.json({ success: true, newBalance });
 });
 
 app.post('/api/wallet/deduct-funds', (req, res) => {
   const { userId, amount, description } = req.body;
   const userIdNum = parseInt(userId);
+  
   if (!userId || !amount) {
     return res.status(400).json({ error: 'userId and amount required' });
   }
+  
   if (!data.wallets[userIdNum]) {
     data.wallets[userIdNum] = { balance: 0, transactions: [] };
   }
+  
   if (data.wallets[userIdNum].balance < parseFloat(amount)) {
     return res.status(400).json({ error: 'Insufficient balance' });
   }
+  
   const newBalance = data.wallets[userIdNum].balance - parseFloat(amount);
   data.wallets[userIdNum].balance = newBalance;
   data.wallets[userIdNum].transactions.unshift({
@@ -417,24 +475,31 @@ app.post('/api/wallet/deduct-funds', (req, res) => {
     date: new Date().toISOString()
   });
   saveData();
+  
+  console.log(`💰 Deducted ₵${amount} from wallet for user ${userId}`);
   res.json({ success: true, newBalance });
 });
 
 app.post('/api/wallet/withdraw', (req, res) => {
   const { userId, amount, network, phoneNumber } = req.body;
   const userIdNum = parseInt(userId);
+  
   if (!userId || !amount || !network || !phoneNumber) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
+  
   const amountNum = parseFloat(amount);
   const fee = amountNum * 0.01;
   const totalDeduction = amountNum + fee;
+  
   if (!data.wallets[userIdNum]) {
     return res.status(400).json({ error: 'Wallet not found' });
   }
+  
   if (data.wallets[userIdNum].balance < totalDeduction) {
     return res.status(400).json({ error: 'Insufficient balance' });
   }
+  
   data.wallets[userIdNum].balance -= totalDeduction;
   data.wallets[userIdNum].transactions.unshift({
     id: Date.now().toString(),
@@ -446,6 +511,7 @@ app.post('/api/wallet/withdraw', (req, res) => {
     description: `Withdrawal to ${network}`,
     date: new Date().toISOString()
   });
+  
   data.companyFees.unshift({
     id: Date.now().toString(),
     amount: fee,
@@ -455,6 +521,8 @@ app.post('/api/wallet/withdraw', (req, res) => {
   });
   data.companyAccount.totalFees += fee;
   saveData();
+  
+  console.log(`💰 Withdrawal: ₵${amount} to ${network} • ${phoneNumber}, Fee: ₵${fee}`);
   res.json({
     success: true,
     amount: amountNum,
@@ -467,15 +535,18 @@ app.post('/api/wallet/withdraw', (req, res) => {
 app.get('/api/wallet/transactions/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const wallet = data.wallets[userId];
+  
   if (!wallet) {
     return res.json({ transactions: [] });
   }
+  
   res.json({ transactions: wallet.transactions || [] });
 });
 
 // ============ POST ENDPOINTS ============
 app.get("/api/posts", (req, res) => {
   const allPosts = data.posts || [];
+  
   const enrichedPosts = allPosts.map(post => {
     const author = data.users.find(u => u.id === post.userId);
     return {
@@ -484,22 +555,32 @@ app.get("/api/posts", (req, res) => {
       network: author?.network || 'MTN',
     };
   });
+  
   res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 });
 
 app.post("/api/posts", (req, res) => {
   const { content, image, video, location, celebrationType, celebrantName, isBirthday, music, hashtags } = req.body;
+  
+  console.log('📝 POST /api/posts');
+  console.log('  Location received:', location || 'None');
+  console.log('  Celebration Type:', celebrationType || 'None');
+  console.log('  Celebrant Name:', celebrantName || 'None');
+  
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).json({ error: 'No authorization header' });
   }
+  
   const token = authHeader.replace('Bearer ', '');
+  
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
     const user = data.users.find(u => u.id === decoded.userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+    
     const newPost = {
       id: Date.now().toString(),
       userId: user.id,
@@ -524,11 +605,16 @@ app.post("/api/posts", (req, res) => {
       createdAt: new Date().toISOString(),
       commentList: []
     };
+    
     if (!data.posts) data.posts = [];
     data.posts.unshift(newPost);
     saveData();
+    
+    console.log(`  ✅ Post created by ${user.name}: ${newPost.id}`);
+    console.log(`  📍 Location saved: ${newPost.location || 'None'}`);
     res.status(201).json(newPost);
   } catch (err) {
+    console.error('  ❌ JWT verification error:', err.message);
     return res.status(401).json({ error: 'Invalid token: ' + err.message });
   }
 });
@@ -548,6 +634,7 @@ app.post("/api/posts/:id/like", (req, res) => {
   const { userId } = req.body;
   const post = (data.posts || []).find(p => p.id === id);
   if (!post) return res.status(404).json({ error: "Post not found" });
+  
   if (!data.postLikes) data.postLikes = [];
   const existing = data.postLikes.find(l => l.postId === id && l.userId === userId);
   if (!existing) {
@@ -567,6 +654,7 @@ app.delete("/api/posts/:id/like", (req, res) => {
   const { userId } = req.body;
   const post = (data.posts || []).find(p => p.id === id);
   if (!post) return res.status(404).json({ error: "Post not found" });
+  
   if (data.postLikes) {
     const index = data.postLikes.findIndex(l => l.postId === id && l.userId === userId);
     if (index !== -1) {
@@ -584,6 +672,7 @@ app.post("/api/posts/:id/comments", (req, res) => {
   const { userId, text, userName, userAvatar } = req.body;
   const post = (data.posts || []).find(p => p.id === id);
   if (!post) return res.status(404).json({ error: "Post not found" });
+  
   const newComment = {
     id: Date.now().toString(),
     userId,
@@ -597,6 +686,7 @@ app.post("/api/posts/:id/comments", (req, res) => {
   post.commentList.push(newComment);
   post.comments = (post.comments || 0) + 1;
   saveData();
+  
   if (post.userId !== userId) {
     const user = data.users.find(u => u.id === userId);
     addNotification(post.userId, 'comment', '💬 New Comment', `${user?.name || 'Someone'} commented on your post`);
@@ -608,6 +698,7 @@ app.delete("/api/posts/:postId/comments/:commentId", (req, res) => {
   const { postId, commentId } = req.params;
   const post = (data.posts || []).find(p => p.id === postId);
   if (!post) return res.status(404).json({ error: "Post not found" });
+  
   const index = post.commentList?.findIndex(c => c.id === commentId);
   if (index === -1) return res.status(404).json({ error: "Comment not found" });
   post.commentList.splice(index, 1);
@@ -684,61 +775,75 @@ app.delete("/api/notifications/:id", (req, res) => {
 
 // ============ FRIENDS ENDPOINTS ============
 app.get('/api/friends/requests', (req, res) => {
+  console.log('📨 GET /api/friends/requests');
+  
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).json({ error: 'No authorization header' });
   }
+  
   const token = authHeader.replace('Bearer ', '');
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
     const userId = decoded.userId;
+    
     const pending = data.friendRequests.filter(r => r.toUserId === userId && r.status === 'pending');
     const withDetails = pending.map(req => {
       const fromUser = data.users.find(u => u.id === req.fromUserId);
-      return {
-        ...req,
-        fromUser: fromUser ? {
-          id: fromUser.id,
-          name: fromUser.name,
+      return { 
+        ...req, 
+        fromUser: fromUser ? { 
+          id: fromUser.id, 
+          name: fromUser.name, 
           username: fromUser.username,
           profileImage: fromUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
         } : null
       };
     });
+    
+    console.log(`  ✅ Found ${withDetails.length} pending requests`);
     res.json({ requests: withDetails });
   } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
 
 app.post('/api/friends/request', (req, res) => {
   const { toUserId } = req.body;
+  console.log(`📨 POST /api/friends/request to ${toUserId}`);
+  
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).json({ error: 'No authorization header' });
   }
+  
   const token = authHeader.replace('Bearer ', '');
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
     const fromUserId = decoded.userId;
+    
     if (fromUserId === toUserId) {
       return res.status(400).json({ error: 'Cannot send request to yourself' });
     }
+    
     const existing = data.friendRequests.find(
       r => r.fromUserId === fromUserId && r.toUserId === toUserId && r.status === 'pending'
     );
     if (existing) {
       return res.status(400).json({ error: 'Request already sent' });
     }
-    const newRequest = {
-      id: Date.now().toString(),
-      fromUserId: parseInt(fromUserId),
-      toUserId: parseInt(toUserId),
-      status: 'pending',
-      createdAt: new Date().toISOString()
+    
+    const newRequest = { 
+      id: Date.now().toString(), 
+      fromUserId: parseInt(fromUserId), 
+      toUserId: parseInt(toUserId), 
+      status: 'pending', 
+      createdAt: new Date().toISOString() 
     };
     data.friendRequests.push(newRequest);
     saveData();
+    
     const fromUser = data.users.find(u => u.id === fromUserId);
     if (fromUser) {
       addNotification(
@@ -750,23 +855,31 @@ app.post('/api/friends/request', (req, res) => {
         fromUserId,
         fromUser.name
       );
+      console.log(`📨 Notification sent to user ${toUserId}: Friend request from ${fromUser.name}`);
     }
+    
+    console.log(`  ✅ Request sent from ${fromUserId} to ${toUserId}`);
     res.json({ success: true, request: newRequest });
   } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
 
 app.post('/api/friends/accept', (req, res) => {
   const { requestId } = req.body;
+  console.log(`✅ POST /api/friends/accept ${requestId}`);
+  
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).json({ error: 'No authorization header' });
   }
+  
   const token = authHeader.replace('Bearer ', '');
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
     const userId = decoded.userId;
+    
     const request = data.friendRequests.find(r => r.id === requestId);
     if (!request) {
       return res.status(404).json({ error: 'Request not found' });
@@ -777,20 +890,22 @@ app.post('/api/friends/accept', (req, res) => {
     if (request.status !== 'pending') {
       return res.status(400).json({ error: 'Request already processed' });
     }
+    
     request.status = 'accepted';
-    data.friendships.push({
-      id: Date.now().toString(),
-      userId: request.fromUserId,
-      friendId: request.toUserId,
-      createdAt: new Date().toISOString()
+    data.friendships.push({ 
+      id: Date.now().toString(), 
+      userId: request.fromUserId, 
+      friendId: request.toUserId, 
+      createdAt: new Date().toISOString() 
     });
-    data.friendships.push({
-      id: (Date.now() + 1).toString(),
-      userId: request.toUserId,
-      friendId: request.fromUserId,
-      createdAt: new Date().toISOString()
+    data.friendships.push({ 
+      id: (Date.now() + 1).toString(), 
+      userId: request.toUserId, 
+      friendId: request.fromUserId, 
+      createdAt: new Date().toISOString() 
     });
     saveData();
+    
     const toUser = data.users.find(u => u.id === request.toUserId);
     if (toUser) {
       addNotification(
@@ -802,23 +917,31 @@ app.post('/api/friends/accept', (req, res) => {
         request.toUserId,
         toUser.name
       );
+      console.log(`📨 Notification sent to user ${request.fromUserId}: Request accepted by ${toUser.name}`);
     }
+    
+    console.log(`  ✅ Request ${requestId} accepted`);
     res.json({ success: true });
   } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
 
 app.post('/api/friends/decline', (req, res) => {
   const { requestId } = req.body;
+  console.log(`❌ POST /api/friends/decline ${requestId}`);
+  
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).json({ error: 'No authorization header' });
   }
+  
   const token = authHeader.replace('Bearer ', '');
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
     const userId = decoded.userId;
+    
     const request = data.friendRequests.find(r => r.id === requestId);
     if (!request) {
       return res.status(404).json({ error: 'Request not found' });
@@ -826,44 +949,61 @@ app.post('/api/friends/decline', (req, res) => {
     if (request.toUserId !== userId) {
       return res.status(403).json({ error: 'Not authorized' });
     }
+    
     request.status = 'declined';
     saveData();
+    
+    console.log(`  ✅ Request ${requestId} declined`);
     res.json({ success: true });
   } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
 
 app.delete('/api/friends/:friendId', (req, res) => {
   const friendId = parseInt(req.params.friendId);
+  console.log(`🗑️ DELETE /api/friends/${friendId}`);
+  
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).json({ error: 'No authorization header' });
   }
+  
   const token = authHeader.replace('Bearer ', '');
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
     const userId = decoded.userId;
+    
     const index1 = data.friendships.findIndex(f => f.userId === userId && f.friendId === friendId);
     const index2 = data.friendships.findIndex(f => f.userId === friendId && f.friendId === userId);
+    
     if (index1 !== -1) data.friendships.splice(index1, 1);
     if (index2 !== -1) data.friendships.splice(index2, 1);
+    
     saveData();
+    
+    console.log(`  ✅ Unfriended ${friendId}`);
     res.json({ success: true });
   } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
 
 app.get('/api/friends/birthdays', (req, res) => {
+  console.log('🎂 GET /api/friends/birthdays');
+  
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).json({ error: 'No authorization header' });
   }
+  
   const token = authHeader.replace('Bearer ', '');
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
     const userId = decoded.userId;
+    
     const friendships = data.friendships.filter(f => f.userId === userId);
     const friendIds = friendships.map(f => f.friendId);
     const friendsWithBirthdays = data.users
@@ -875,8 +1015,11 @@ app.get('/api/friends/birthdays', (req, res) => {
         birthDate: friend.birthDate,
         avatar: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
       }));
+    
+    console.log(`  ✅ Found ${friendsWithBirthdays.length} friends with birthdays`);
     res.json({ friendsBirthdays: friendsWithBirthdays });
   } catch (err) {
+    console.error('  ❌ Auth error:', err.message);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
@@ -888,6 +1031,7 @@ app.get("/api/users/birthdays", (req, res) => {
   const userIdNum = parseInt(userId);
   const user = data.users.find(u => u.id === userIdNum);
   if (!user) return res.status(404).json({ error: "User not found" });
+  
   const friendships = data.friendships.filter(f => f.userId === userIdNum);
   const friendIds = friendships.map(f => f.friendId);
   const friendsWithBirthdays = data.users.filter(u => friendIds.includes(u.id) && u.birthDate).map(friend => ({
@@ -929,9 +1073,11 @@ app.post("/api/group-gifts/:id/contribute", (req, res) => {
   const gift = data.groupGifts.find(g => g.id === id);
   if (!gift) return res.status(404).json({ error: "Group gift not found" });
   if (gift.status !== 'active') return res.status(400).json({ error: "Group gift not active" });
+  
   const contributionAmount = parseFloat(amount);
   const newTotal = gift.currentAmount + contributionAmount;
   if (newTotal > gift.targetAmount) return res.status(400).json({ error: "Contribution exceeds target" });
+  
   gift.contributors.push({ userId: parseInt(userId), userName: userName || "Anonymous", amount: contributionAmount, date: new Date().toISOString() });
   gift.contributorsCount += 1;
   gift.currentAmount = newTotal;
@@ -957,6 +1103,7 @@ app.get("/api/gifts", (req, res) => {
 app.post("/api/gifts/purchase", (req, res) => {
   const { giftId, giftName, amount, network, phoneNumber, buyerId, buyerName, recipientId, recipientName } = req.body;
   if (!giftId || !amount || !recipientId) return res.status(400).json({ error: "Missing required fields" });
+  
   const newBalance = addToWallet(recipientId, parseFloat(amount), giftName, buyerName || 'Someone');
   const transaction = { id: Date.now().toString(), giftId, giftName, amount: parseFloat(amount), buyerId, buyerName, recipientId, recipientName, network, phoneNumber, status: 'completed', date: new Date().toISOString() };
   data.giftTransactions.unshift(transaction);
@@ -968,7 +1115,11 @@ app.post("/api/gifts/purchase", (req, res) => {
 // ============ SEARCH ENDPOINT ============
 app.get('/api/users/search', (req, res) => {
   const { q } = req.query;
+  console.log(`🔍 Search query: "${q}"`);
+  console.log(`👥 Total users in database: ${data.users.length}`);
+  
   if (!q || q.length === 0) {
+    console.log(`📋 Returning all ${data.users.length} users`);
     const allUsers = data.users.map(user => ({
       id: user.id,
       name: user.name,
@@ -980,6 +1131,7 @@ app.get('/api/users/search', (req, res) => {
     }));
     return res.json(allUsers);
   }
+  
   const searchTerm = q.toLowerCase().trim();
   const results = data.users.filter(user => {
     const nameMatch = user.name?.toLowerCase().includes(searchTerm);
@@ -987,6 +1139,8 @@ app.get('/api/users/search', (req, res) => {
     const emailMatch = user.email?.toLowerCase().includes(searchTerm);
     return nameMatch || usernameMatch || emailMatch;
   });
+  
+  console.log(`✅ Found ${results.length} users matching "${q}"`);
   res.json(results.map(user => ({
     id: user.id,
     name: user.name,
@@ -999,6 +1153,7 @@ app.get('/api/users/search', (req, res) => {
 });
 
 // ============ USER SETTINGS ENDPOINTS ============
+
 if (!data.userSettings) {
   data.userSettings = {};
   saveData();
@@ -1011,20 +1166,37 @@ if (!data.blockedUsers) {
 
 app.get('/api/user/settings/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
+  
   if (!data.userSettings[userId]) {
     data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' },
-      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
-      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+      theme: {
+        darkMode: false,
+        primaryColor: '#6366f1'
+      },
+      privacy: {
+        birthdayVisibility: 'friends',
+        postVisibility: 'friends',
+        allowWishes: 'everyone',
+        allowTagging: 'friends'
+      },
+      notifications: {
+        enabled: true,
+        birthdayReminders: true,
+        friendRequests: true,
+        giftNotifications: true,
+        commentNotifications: true
+      }
     };
     saveData();
   }
+  
   res.json(data.userSettings[userId]);
 });
 
 app.put('/api/user/settings/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { theme, privacy, notifications } = req.body;
+  
   if (!data.userSettings[userId]) {
     data.userSettings[userId] = {
       theme: { darkMode: false, primaryColor: '#6366f1' },
@@ -1032,6 +1204,7 @@ app.put('/api/user/settings/:userId', (req, res) => {
       notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
     };
   }
+  
   if (theme) {
     data.userSettings[userId].theme = { ...data.userSettings[userId].theme, ...theme };
   }
@@ -1041,21 +1214,26 @@ app.put('/api/user/settings/:userId', (req, res) => {
   if (notifications) {
     data.userSettings[userId].notifications = { ...data.userSettings[userId].notifications, ...notifications };
   }
+  
   saveData();
+  console.log(`✅ Settings updated for user ${userId}`);
   res.json({ success: true, settings: data.userSettings[userId] });
 });
 
 app.get('/api/user/settings/:userId/theme', (req, res) => {
   const userId = parseInt(req.params.userId);
+  
   if (!data.userSettings[userId]) {
     return res.json({ darkMode: false, primaryColor: '#6366f1' });
   }
+  
   res.json(data.userSettings[userId].theme || { darkMode: false, primaryColor: '#6366f1' });
 });
 
 app.put('/api/user/settings/:userId/theme', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { darkMode, primaryColor } = req.body;
+  
   if (!data.userSettings[userId]) {
     data.userSettings[userId] = {
       theme: { darkMode: false, primaryColor: '#6366f1' },
@@ -1063,23 +1241,29 @@ app.put('/api/user/settings/:userId/theme', (req, res) => {
       notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
     };
   }
+  
   if (darkMode !== undefined) {
     data.userSettings[userId].theme.darkMode = darkMode;
   }
   if (primaryColor) {
     data.userSettings[userId].theme.primaryColor = primaryColor;
   }
+  
   saveData();
+  console.log(`🎨 Theme updated for user ${userId}: darkMode=${darkMode}`);
   res.json({ success: true, theme: data.userSettings[userId].theme });
 });
 
 // ============ BLOCKED USERS ENDPOINTS ============
+
 app.get('/api/user/blocked/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
+  
   if (!data.blockedUsers[userId]) {
     data.blockedUsers[userId] = [];
     saveData();
   }
+  
   const blockedUserIds = data.blockedUsers[userId] || [];
   const blockedUsers = data.users
     .filter(u => blockedUserIds.includes(u.id))
@@ -1091,36 +1275,46 @@ app.get('/api/user/blocked/:userId', (req, res) => {
       reason: 'Blocked by user',
       blockedAt: new Date().toISOString()
     }));
+  
   res.json({ blockedUsers });
 });
 
 app.post('/api/user/block/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { blockUserId } = req.body;
+  
   if (!data.blockedUsers[userId]) {
     data.blockedUsers[userId] = [];
   }
+  
   if (!data.blockedUsers[userId].includes(blockUserId)) {
     data.blockedUsers[userId].push(blockUserId);
     saveData();
+    console.log(`🚫 User ${userId} blocked user ${blockUserId}`);
   }
+  
   res.json({ success: true, blockedUsers: data.blockedUsers[userId] });
 });
 
 app.delete('/api/user/unblock/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { blockUserId } = req.body;
+  
   if (data.blockedUsers[userId]) {
     data.blockedUsers[userId] = data.blockedUsers[userId].filter(id => id !== blockUserId);
     saveData();
+    console.log(`✅ User ${userId} unblocked user ${blockUserId}`);
   }
+  
   res.json({ success: true, blockedUsers: data.blockedUsers[userId] || [] });
 });
 
 // ============ NOTIFICATION PREFERENCES ENDPOINTS ============
+
 app.put('/api/user/notifications/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const { enabled, birthdayReminders, friendRequests, giftNotifications, commentNotifications } = req.body;
+  
   if (!data.userSettings[userId]) {
     data.userSettings[userId] = {
       theme: { darkMode: false, primaryColor: '#6366f1' },
@@ -1128,50 +1322,94 @@ app.put('/api/user/notifications/:userId', (req, res) => {
       notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
     };
   }
+  
   if (enabled !== undefined) data.userSettings[userId].notifications.enabled = enabled;
   if (birthdayReminders !== undefined) data.userSettings[userId].notifications.birthdayReminders = birthdayReminders;
   if (friendRequests !== undefined) data.userSettings[userId].notifications.friendRequests = friendRequests;
   if (giftNotifications !== undefined) data.userSettings[userId].notifications.giftNotifications = giftNotifications;
   if (commentNotifications !== undefined) data.userSettings[userId].notifications.commentNotifications = commentNotifications;
+  
   saveData();
+  console.log(`🔔 Notification preferences updated for user ${userId}`);
   res.json({ success: true, notifications: data.userSettings[userId].notifications });
 });
 
 // ============================================================
-// ✅ DELETE ACCOUNT
+// ✅ DELETE ACCOUNT - Real Backend Operation
 // ============================================================
+
 app.delete('/api/user/delete', verifyToken, (req, res) => {
   const userId = req.userId;
+  
+  console.log(`🗑️ Deleting user account: ${userId}`);
+  
+  // Remove user
   const userIndex = data.users.findIndex(u => u.id === userId);
   if (userIndex !== -1) {
     data.users.splice(userIndex, 1);
   }
+  
+  // Remove wallet
   delete data.wallets[userId];
-  data.friendships = data.friendships.filter(f => f.userId !== userId && f.friendId !== userId);
-  data.friendRequests = data.friendRequests.filter(r => r.fromUserId !== userId && r.toUserId !== userId);
+  
+  // Remove friendships
+  data.friendships = data.friendships.filter(f => 
+    f.userId !== userId && f.friendId !== userId
+  );
+  
+  // Remove friend requests
+  data.friendRequests = data.friendRequests.filter(r => 
+    r.fromUserId !== userId && r.toUserId !== userId
+  );
+  
+  // Remove posts
   data.posts = data.posts.filter(p => p.userId !== userId);
+  
+  // Remove notifications
   data.notifications = data.notifications.filter(n => n.userId !== userId);
+  
+  // Remove user settings
   delete data.userSettings[userId];
+  
+  // Remove blocked users
   delete data.blockedUsers[userId];
-  data.follows = data.follows.filter(f => f.followerId !== userId && f.followingId !== userId);
+  
+  // Remove follows
+  data.follows = data.follows.filter(f => 
+    f.followerId !== userId && f.followingId !== userId
+  );
+  
+  // Remove calendar events
   delete data.calendarEvents[userId];
+  
   saveData();
+  
+  console.log(`✅ User ${userId} deleted successfully`);
   res.json({ success: true, message: 'Account deleted successfully' });
 });
 
 // ============================================================
-// ✅ FOLLOW/UNFOLLOW
+// ✅ FOLLOW/UNFOLLOW - REAL IMPLEMENTATION
 // ============================================================
+
 app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
   const userId = parseInt(req.params.userId);
   const followerId = req.userId;
+  
+  console.log(`👤 User ${followerId} following user ${userId}`);
+  
   if (followerId === userId) {
     return res.status(400).json({ error: 'Cannot follow yourself' });
   }
+  
   if (!data.follows) {
     data.follows = [];
   }
-  const existing = data.follows.find(f => f.followerId === followerId && f.followingId === userId);
+  
+  const existing = data.follows.find(
+    f => f.followerId === followerId && f.followingId === userId
+  );
+  
   if (!existing) {
     data.follows.push({
       id: Date.now().toString(),
@@ -1180,6 +1418,7 @@ app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
       createdAt: new Date().toISOString()
     });
     saveData();
+    
     const follower = data.users.find(u => u.id === followerId);
     if (follower) {
       addNotification(
@@ -1192,6 +1431,8 @@ app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
         follower.name
       );
     }
+    
+    console.log(`✅ User ${followerId} now following ${userId}`);
     res.json({ success: true, message: `Now following user ${userId}` });
   } else {
     res.json({ success: true, message: 'Already following' });
@@ -1201,22 +1442,40 @@ app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
 app.delete('/api/users/follow/:userId', verifyToken, (req, res) => {
   const userId = parseInt(req.params.userId);
   const followerId = req.userId;
+  
+  console.log(`👤 User ${followerId} unfollowing user ${userId}`);
+  
   if (data.follows) {
-    data.follows = data.follows.filter(f => !(f.followerId === followerId && f.followingId === userId));
-    saveData();
+    const initialLength = data.follows.length;
+    data.follows = data.follows.filter(
+      f => !(f.followerId === followerId && f.followingId === userId)
+    );
+    
+    if (data.follows.length < initialLength) {
+      saveData();
+      console.log(`✅ User ${followerId} unfollowed ${userId}`);
+      res.json({ success: true, message: `Unfollowed user ${userId}` });
+    } else {
+      res.json({ success: true, message: 'Not following this user' });
+    }
+  } else {
+    res.json({ success: true, message: 'Not following this user' });
   }
-  res.json({ success: true, message: `Unfollowed user ${userId}` });
 });
 
 // ============================================================
 // ✅ FOLLOWERS/FOLLOWING COUNTS
 // ============================================================
+
 app.get('/api/users/:userId/followers', (req, res) => {
   const userId = parseInt(req.params.userId);
+  
   if (!data.follows) {
     data.follows = [];
   }
+  
   const followers = data.follows.filter(f => f.followingId === userId);
+  
   const followerDetails = followers.map(f => {
     const user = data.users.find(u => u.id === f.followerId);
     return user ? {
@@ -1226,15 +1485,22 @@ app.get('/api/users/:userId/followers', (req, res) => {
       profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
     } : null;
   }).filter(Boolean);
-  res.json({ count: followerDetails.length, followers: followerDetails });
+  
+  res.json({ 
+    count: followerDetails.length, 
+    followers: followerDetails 
+  });
 });
 
 app.get('/api/users/:userId/following', (req, res) => {
   const userId = parseInt(req.params.userId);
+  
   if (!data.follows) {
     data.follows = [];
   }
+  
   const following = data.follows.filter(f => f.followerId === userId);
+  
   const followingDetails = following.map(f => {
     const user = data.users.find(u => u.id === f.followingId);
     return user ? {
@@ -1244,28 +1510,43 @@ app.get('/api/users/:userId/following', (req, res) => {
       profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
     } : null;
   }).filter(Boolean);
-  res.json({ count: followingDetails.length, following: followingDetails });
+  
+  res.json({ 
+    count: followingDetails.length, 
+    following: followingDetails 
+  });
 });
 
 app.get('/api/users/:userId/is-following/:targetId', (req, res) => {
   const userId = parseInt(req.params.userId);
   const targetId = parseInt(req.params.targetId);
+  
   if (!data.follows) {
     data.follows = [];
   }
-  const isFollowing = data.follows.some(f => f.followerId === userId && f.followingId === targetId);
+  
+  const isFollowing = data.follows.some(
+    f => f.followerId === userId && f.followingId === targetId
+  );
+  
   res.json({ isFollowing });
 });
 
 // ============================================================
 // ✅ GIFT HISTORY
 // ============================================================
+
 app.get('/api/gifts/received/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
+  
   if (!data.giftTransactions) {
     data.giftTransactions = [];
   }
-  const receivedGifts = data.giftTransactions.filter(g => g.celebrantId === userId);
+  
+  const receivedGifts = data.giftTransactions.filter(
+    g => g.celebrantId === userId
+  );
+  
   const formattedGifts = receivedGifts.map(g => ({
     id: g.id,
     giftName: g.giftName,
@@ -1275,8 +1556,9 @@ app.get('/api/gifts/received/:userId', (req, res) => {
     status: 'completed',
     icon: '🎁'
   }));
-  res.json({
-    gifts: formattedGifts,
+  
+  res.json({ 
+    gifts: formattedGifts, 
     count: formattedGifts.length,
     totalAmount: formattedGifts.reduce((sum, g) => sum + g.amount, 0)
   });
@@ -1284,10 +1566,15 @@ app.get('/api/gifts/received/:userId', (req, res) => {
 
 app.get('/api/gifts/sent/:userId', (req, res) => {
   const userId = parseInt(req.params.userId);
+  
   if (!data.giftTransactions) {
     data.giftTransactions = [];
   }
-  const sentGifts = data.giftTransactions.filter(g => g.senderId === userId || g.fromUserId === userId);
+  
+  const sentGifts = data.giftTransactions.filter(
+    g => g.senderId === userId || g.fromUserId === userId
+  );
+  
   const formattedGifts = sentGifts.map(g => ({
     id: g.id,
     giftName: g.giftName,
@@ -1297,32 +1584,39 @@ app.get('/api/gifts/sent/:userId', (req, res) => {
     status: 'completed',
     icon: '🎁'
   }));
-  res.json({
-    gifts: formattedGifts,
+  
+  res.json({ 
+    gifts: formattedGifts, 
     count: formattedGifts.length,
     totalAmount: formattedGifts.reduce((sum, g) => sum + g.amount, 0)
   });
 });
 
 // ============================================================
-// ✅ PROFILE STATS
+// ✅ PROFILE STATS (Posts, Followers, Following)
 // ============================================================
+
 app.get('/api/users/:userId/stats', (req, res) => {
   const userId = parseInt(req.params.userId);
+  
   if (!data.follows) {
     data.follows = [];
   }
+  
   if (!data.posts) {
     data.posts = [];
   }
+
   const followers = data.follows.filter(f => f.followingId === userId).length;
   const following = data.follows.filter(f => f.followerId === userId).length;
   const posts = data.posts.filter(p => p.userId === userId).length;
+
   const giftTransactions = data.giftTransactions || [];
   const giftsReceived = giftTransactions.filter(g => g.celebrantId === userId).length;
   const totalGiftAmount = giftTransactions
     .filter(g => g.celebrantId === userId)
     .reduce((sum, g) => sum + (g.giftAmount || g.amount || 0), 0);
+
   res.json({
     userId,
     posts,
@@ -1333,10 +1627,13 @@ app.get('/api/users/:userId/stats', (req, res) => {
   });
 });
 
+console.log('✅ Follow, Gift History, and Stats endpoints added!');
+
 // ============================================================
 // ✅ BANNER SYSTEM
 // ============================================================
 
+// Initialize banners
 if (!data.banners) {
   data.banners = [
     {
@@ -1372,15 +1669,17 @@ if (!data.banners) {
   console.log('📊 Banners initialized');
 }
 
+// GET /api/banners
 app.get('/api/banners', (req, res) => {
   const activeBanners = (data.banners || []).filter(b => b.active !== false);
-  console.log(`📊 Returning ${activeBanners.length} banners`);
+  console.log(`📊 Returning ${activeBanners.length} active banners`);
   res.json({ success: true, banners: activeBanners });
 });
 
+// POST /api/banners/:id/view
 app.post('/api/banners/:id/view', (req, res) => {
   const { id } = req.params;
-  console.log(`👁️ View: ${id}`);
+  console.log(`👁️ Banner view: ${id}`);
   const banner = (data.banners || []).find(b => b.id === id);
   if (banner) {
     banner.views = (banner.views || 0) + 1;
@@ -1389,9 +1688,10 @@ app.post('/api/banners/:id/view', (req, res) => {
   res.json({ success: true });
 });
 
+// POST /api/banners/:id/click
 app.post('/api/banners/:id/click', (req, res) => {
   const { id } = req.params;
-  console.log(`👆 Click: ${id}`);
+  console.log(`👆 Banner click: ${id}`);
   const banner = (data.banners || []).find(b => b.id === id);
   if (banner) {
     banner.clicks = (banner.clicks || 0) + 1;
@@ -1403,6 +1703,126 @@ app.post('/api/banners/:id/click', (req, res) => {
 console.log('✅ Banner routes loaded');
 
 // ============================================================
+// ✅ STORIES ENDPOINTS
+// ============================================================
+
+// Get all stories
+app.get('/api/stories', (req, res) => {
+  const stories = data.stories || [];
+  console.log(`📸 Returning ${stories.length} stories`);
+  res.json({ success: true, stories });
+});
+
+// Create a story (requires auth)
+app.post('/api/stories', verifyToken, (req, res) => {
+  const { contentUrl, isVideo, caption, privacy } = req.body;
+  const userId = req.userId;
+  
+  const user = data.users.find(u => u.id === userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  
+  const newStory = {
+    id: Date.now().toString(),
+    userId: userId.toString(),
+    userName: user.name,
+    userAvatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    contentUrl: contentUrl,
+    isVideo: isVideo || false,
+    caption: caption || '',
+    privacy: privacy || 'friends',
+    likes: 0,
+    viewers: 0,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+  };
+  
+  if (!data.stories) data.stories = [];
+  data.stories.unshift(newStory);
+  saveData();
+  
+  console.log(`📸 Story created by ${user.name}`);
+  res.status(201).json({ success: true, story: newStory });
+});
+
+// Mark story as seen
+app.post('/api/stories/seen', verifyToken, (req, res) => {
+  const { storyId } = req.body;
+  const userId = req.userId;
+  
+  if (!data.seenStories) data.seenStories = [];
+  
+  const existing = data.seenStories.find(
+    s => s.storyId === storyId && s.userId === userId
+  );
+  
+  if (!existing) {
+    data.seenStories.push({ storyId, userId, seenAt: new Date().toISOString() });
+    const story = (data.stories || []).find(s => s.id === storyId);
+    if (story) {
+      story.viewers = (story.viewers || 0) + 1;
+    }
+    saveData();
+  }
+  
+  res.json({ success: true });
+});
+
+// Like a story
+app.post('/api/stories/:id/like', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const story = (data.stories || []).find(s => s.id === id);
+  if (!story) {
+    return res.status(404).json({ error: 'Story not found' });
+  }
+  story.likes = (story.likes || 0) + 1;
+  saveData();
+  res.json({ success: true, likes: story.likes });
+});
+
+// Unlike a story
+app.delete('/api/stories/:id/like', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const story = (data.stories || []).find(s => s.id === id);
+  if (!story) {
+    return res.status(404).json({ error: 'Story not found' });
+  }
+  story.likes = Math.max(0, (story.likes || 0) - 1);
+  saveData();
+  res.json({ success: true, likes: story.likes });
+});
+
+// Get seen stories for a user
+app.get('/api/stories/seen/:userId', verifyToken, (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.seenStories) data.seenStories = [];
+  const seenStoryIds = data.seenStories
+    .filter(s => s.userId === userId)
+    .map(s => s.storyId);
+  res.json({ success: true, seenStoryIds });
+});
+
+// Delete a story
+app.delete('/api/stories/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  const storyIndex = (data.stories || []).findIndex(s => s.id === id);
+  if (storyIndex === -1) {
+    return res.status(404).json({ error: 'Story not found' });
+  }
+  const story = data.stories[storyIndex];
+  if (parseInt(story.userId) !== userId) {
+    return res.status(403).json({ error: 'Not your story' });
+  }
+  data.stories.splice(storyIndex, 1);
+  saveData();
+  res.json({ success: true });
+});
+
+console.log('✅ Stories routes loaded');
+
+// ============================================================
 // ✅ START SERVER
 // ============================================================
 app.listen(PORT, "0.0.0.0", () => {
@@ -1412,4 +1832,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`📢 Notifications: ${data.notifications.length}`);
   console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
   console.log(`📊 Banners: ${data.banners.length}`);
+  console.log(`📸 Stories: ${data.stories.length}`);
 });
+
+console.log("✅ BACKEND index.js updated with all endpoints!");
