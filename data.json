@@ -63,7 +63,8 @@
       "birthDate": null,
       "phone": "",
       "network": "",
-      "created_at": "2026-07-08T19:48:09.966Z"
+      "created_at": "2026-07-08T19:48:09.966Z",
+      "password_hash": "$2a$10$8FySXGGLz/7h31H/WVW4feNUenU/LFBsyfJXDDzKfD3kWSWQdWPNW"
     },
     {
       "id": 7,
@@ -76,7 +77,19 @@
       "created_at": "2026-07-09T00:43:04.213Z",
       "profileImage": "file:///data/user/0/host.exp.exponent/cache/ImagePicker/8eb56e70-4190-410e-9715-d78fb4f1ab57.jpeg",
       "bio": "",
-      "location": ""
+      "location": "",
+      "password_hash": "$2a$10$L1Ifbh6e9eud87C5JUtweepqAjMl.lQfdDh7R8oXLtuJ/UQED51Re"
+    },
+    {
+      "id": 8,
+      "email": "test3@example.com",
+      "name": "Test User 3",
+      "username": "@testuser3",
+      "birthDate": null,
+      "phone": "",
+      "network": "",
+      "created_at": "2026-07-09T01:18:10.785Z",
+      "password_hash": "$2a$10$a9Tthk.4Jn.L3P91dA0rTOwDDXjf8mMovLnf5/I.NArL5kmrvIj96"
     }
   ],
   "posts": [
@@ -269,6 +282,10 @@
       "transactions": []
     },
     "7": {
+      "balance": 0,
+      "transactions": []
+    },
+    "8": {
       "balance": 0,
       "transactions": []
     }
