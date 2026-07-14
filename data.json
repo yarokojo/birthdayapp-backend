@@ -239,8 +239,18 @@
   ],
   "wallets": {
     "1": {
-      "balance": 89.9,
+      "balance": 39.400000000000006,
       "transactions": [
+        {
+          "id": "1783594812959",
+          "type": "withdrawal",
+          "amount": 50,
+          "fee": 0.5,
+          "network": "MTN",
+          "phoneNumber": "0244123456",
+          "description": "Withdrawal to MTN",
+          "date": "2026-07-09T11:00:12.959Z"
+        },
         {
           "id": "1782745902064",
           "type": "withdrawal",
@@ -262,8 +272,17 @@
       ]
     },
     "2": {
-      "balance": 50,
-      "transactions": []
+      "balance": 150,
+      "transactions": [
+        {
+          "id": "1783594796966",
+          "type": "credit",
+          "amount": 100,
+          "giftName": "Gold Bar",
+          "fromName": "Test Buyer",
+          "date": "2026-07-09T10:59:56.967Z"
+        }
+      ]
     },
     "3": {
       "balance": 75,
@@ -292,6 +311,19 @@
   },
   "notifications": [
     {
+      "id": "1783594796972",
+      "userId": 2,
+      "type": "gift",
+      "title": "🎁 Gift Received",
+      "message": "Test Buyer sent you Gold Bar worth ₵100!",
+      "imageUrl": null,
+      "targetId": null,
+      "targetName": null,
+      "extraData": {},
+      "isRead": false,
+      "createdAt": "2026-07-09T10:59:56.972Z"
+    },
+    {
       "id": "n1",
       "userId": 1,
       "type": "gift",
@@ -313,6 +345,13 @@
   "seenStories": [],
   "companyFees": [
     {
+      "id": "1783594812959",
+      "amount": 0.5,
+      "fromUserId": 1,
+      "withdrawalAmount": 50,
+      "date": "2026-07-09T11:00:12.959Z"
+    },
+    {
       "id": "1782745902064",
       "amount": 0.1,
       "fromUserId": 1,
@@ -320,12 +359,27 @@
       "date": "2026-06-29T15:11:42.064Z"
     }
   ],
-  "giftTransactions": [],
+  "giftTransactions": [
+    {
+      "id": "1783594796970",
+      "giftId": 1,
+      "giftName": "Gold Bar",
+      "amount": 100,
+      "buyerId": 1,
+      "buyerName": "Test Buyer",
+      "recipientId": 2,
+      "recipientName": "Test Recipient",
+      "network": "MTN",
+      "phoneNumber": "0244123456",
+      "status": "completed",
+      "date": "2026-07-09T10:59:56.970Z"
+    }
+  ],
   "companyAccount": {
     "name": "MeolCompany",
     "accountNumber": "0596270302",
     "network": "MTN",
-    "totalFees": 0.1
+    "totalFees": 0.6
   },
   "userSettings": {
     "6": {
