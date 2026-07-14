@@ -1176,3 +1176,59 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`📊 Banners: ${data.banners.length}`);
   console.log(`📡 Live Streams: ${data.liveStreams?.length || 0}`);
 });
+// ============ VIDEO UPLOAD ============
+const multer = require('multer');
+const path = require('path');
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer for video uploads
+const videoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'video-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const videoUpload = multer({
+  storage: videoStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files are allowed'), false);
+    }
+  }
+});
+
+// Serve uploaded files
+app.use('/uploads', express.static('uploads'));
+
+// POST /api/upload/video - Upload video
+app.post('/api/upload/video', videoUpload.single('video'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No video file uploaded' });
+    }
+
+    const videoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    console.log('🎬 Video uploaded:', videoUrl);
+    
+    res.json({ 
+      success: true, 
+      videoUrl: videoUrl,
+      filename: req.file.filename
+    });
+  } catch (error) {
+    console.error('❌ Video upload error:', error);
+    res.status(500).json({ error: 'Video upload failed' });
+  }
+});
