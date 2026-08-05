@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Test user
+// ============ DATA ============
 const users = [
   {
     id: 1,
@@ -36,8 +36,6 @@ const banners = [
   }
 ];
 const wallets = { "1": { balance: 100, transactions: [] } };
-const notifications = [];
-const stories = [];
 
 // ============ HEALTH ============
 app.get("/health", (req, res) => {
@@ -186,82 +184,9 @@ app.post("/api/posts", (req, res) => {
   res.status(201).json(newPost);
 });
 
-app.delete("/api/posts/:id", (req, res) => {
-  const id = req.params.id;
-  const index = posts.findIndex(p => p.id === id);
-  if (index === -1) return res.status(404).json({ error: "Post not found" });
-  posts.splice(index, 1);
-  res.json({ success: true });
-});
-
-// ============ LIKES ============
-app.post("/api/posts/:id/like", (req, res) => {
-  const post = posts.find(p => p.id === req.params.id);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  post.likes = (post.likes || 0) + 1;
-  res.json({ success: true, likes: post.likes });
-});
-
-app.delete("/api/posts/:id/like", (req, res) => {
-  const post = posts.find(p => p.id === req.params.id);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  post.likes = Math.max(0, (post.likes || 0) - 1);
-  res.json({ success: true, likes: post.likes });
-});
-
-// ============ COMMENTS ============
-app.post("/api/posts/:id/comments", (req, res) => {
-  const post = posts.find(p => p.id === req.params.id);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  const { text } = req.body;
-  if (!text || !text.trim()) {
-    return res.status(400).json({ error: "Comment text is required" });
-  }
-  const newComment = {
-    id: Date.now().toString(),
-    userId: 1,
-    userName: "Test User",
-    userAvatar: "https://randomuser.me/api/portraits/men/1.jpg",
-    text: text.trim(),
-    createdAt: new Date().toISOString(),
-    likes: 0
-  };
-  post.commentList = post.commentList || [];
-  post.commentList.push(newComment);
-  post.comments = (post.comments || 0) + 1;
-  res.status(201).json(newComment);
-});
-
-app.delete("/api/posts/:postId/comments/:commentId", (req, res) => {
-  const post = posts.find(p => p.id === req.params.postId);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  const index = post.commentList.findIndex(c => c.id === req.params.commentId);
-  if (index === -1) return res.status(404).json({ error: "Comment not found" });
-  post.commentList.splice(index, 1);
-  post.comments = Math.max(0, (post.comments || 0) - 1);
-  res.json({ success: true });
-});
-
 // ============ BANNERS ============
 app.get("/api/banners", (req, res) => {
   res.json({ success: true, banners });
-});
-
-app.post("/api/banners/:id/view", (req, res) => {
-  const banner = banners.find(b => b.id === req.params.id);
-  if (banner) banner.views = (banner.views || 0) + 1;
-  res.json({ success: true });
-});
-
-app.post("/api/banners/:id/click", (req, res) => {
-  const banner = banners.find(b => b.id === req.params.id);
-  if (banner) banner.clicks = (banner.clicks || 0) + 1;
-  res.json({ success: true });
-});
-
-// ============ STORIES ============
-app.get("/api/stories", (req, res) => {
-  res.json({ success: true, stories: [] });
 });
 
 // ============ WALLET ============
@@ -271,10 +196,15 @@ app.get("/api/wallet/balance/:userId", (req, res) => {
   res.json({ balance: wallet.balance || 0, currency: "GHS" });
 });
 
-app.get("/api/wallet/transactions/:userId", (req, res) => {
-  const userId = String(req.params.userId);
-  const wallet = wallets[userId] || { balance: 0, transactions: [] };
-  res.json({ transactions: wallet.transactions || [] });
+// ============ GIFTS ============
+app.get("/api/gifts", (req, res) => {
+  res.json([
+    { id: 1, name: "Gold Bar", price: 100, category: "Luxury", icon: "🥇", description: "24K pure gold bar" },
+    { id: 2, name: "Diamond Ring", price: 150, category: "Luxury", icon: "💍", description: "Exclusive diamond ring" },
+    { id: 3, name: "Celebration Cake", price: 50, category: "Food", icon: "🎂", description: "Delicious birthday cake" },
+    { id: 4, name: "Fresh Flowers", price: 40, category: "Flowers", icon: "🌹", description: "Beautiful flower bouquet" },
+    { id: 5, name: "Premium Drink", price: 20, category: "Drinks", icon: "🍾", description: "Premium champagne" }
+  ]);
 });
 
 // ============ NOTIFICATIONS ============
@@ -296,15 +226,9 @@ app.get("/api/user/settings/:userId/theme", (req, res) => {
   res.json({ darkMode: false, primaryColor: "#6366f1" });
 });
 
-// ============ GIFTS ============
-app.get("/api/gifts", (req, res) => {
-  res.json([
-    { id: 1, name: "Gold Bar", price: 100, category: "Luxury", icon: "🥇", description: "24K pure gold bar" },
-    { id: 2, name: "Diamond Ring", price: 150, category: "Luxury", icon: "💍", description: "Exclusive diamond ring" },
-    { id: 3, name: "Celebration Cake", price: 50, category: "Food", icon: "🎂", description: "Delicious birthday cake" },
-    { id: 4, name: "Fresh Flowers", price: 40, category: "Flowers", icon: "🌹", description: "Beautiful flower bouquet" },
-    { id: 5, name: "Premium Drink", price: 20, category: "Drinks", icon: "🍾", description: "Premium champagne" }
-  ]);
+// ============ STORIES ============
+app.get("/api/stories", (req, res) => {
+  res.json({ success: true, stories: [] });
 });
 
 // ============ START ============
