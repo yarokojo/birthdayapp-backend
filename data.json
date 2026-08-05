@@ -1,0 +1,81 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "email": "test@example.com",
+      "password": "$2a$10$80zI0oAX9umwtyyT7UVRluDMJCeqvgkEo7WO/k4A.EzFX2EUesiyG",
+      "name": "Test User",
+      "username": "testuser",
+      "phone": "0244123456",
+      "network": "MTN",
+      "profileImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "birthDate": "1990-06-15"
+    },
+    {
+      "id": 2,
+      "email": "newuser@example.com",
+      "password": "$2a$10$D0uexKlmLpbRru5GKUZhUOMfQLgbzvFcKf9mQKfsd7VSgCKxehZau",
+      "name": "New User",
+      "username": "newuser",
+      "phone": "",
+      "network": "MTN",
+      "profileImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "birthDate": null
+    }
+  ],
+  "posts": [],
+  "postLikes": [],
+  "bookmarks": [],
+  "notifications": [],
+  "wallets": {
+    "1": {
+      "balance": 100,
+      "transactions": []
+    },
+    "2": {
+      "balance": 0,
+      "transactions": []
+    }
+  },
+  "banners": [
+    {
+      "id": "banner_1",
+      "title": "🎉 Welcome to BirthdayApp!",
+      "subtitle": "Celebrate every moment",
+      "icon": "🎂",
+      "colors": [
+        "#6366f1",
+        "#8b5cf6",
+        "#a855f7"
+      ],
+      "active": true
+    }
+  ],
+  "stories": [],
+  "seenStories": [],
+  "friendships": [],
+  "friendRequests": [],
+  "follows": [],
+  "userSettings": {
+    "1": {
+      "theme": {
+        "darkMode": false,
+        "primaryColor": "#6366f1"
+      }
+    },
+    "2": {
+      "theme": {
+        "darkMode": false,
+        "primaryColor": "#6366f1"
+      }
+    }
+  },
+  "giftTransactions": [],
+  "companyFees": [],
+  "companyAccount": {
+    "name": "MeolCompany",
+    "accountNumber": "0596270302",
+    "network": "MTN",
+    "totalFees": 0
+  }
+}
