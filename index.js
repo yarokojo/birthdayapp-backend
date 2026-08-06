@@ -188,3 +188,22 @@ app.get('/api/setup', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ✅ Test database connection
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const { query } = require('./src/config/database');
+    const result = await query('SELECT NOW()');
+    res.json({ 
+      success: true, 
+      time: result.rows[0].now,
+      message: 'Database connected!'
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
