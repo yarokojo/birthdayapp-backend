@@ -21,7 +21,6 @@ router.get('/', requireAuth, async (req, res) => {
     
     console.log(`📢 Found ${result.rows.length} banners`);
     
-    // If no banners in DB, return fallback banners
     if (result.rows.length === 0) {
       const fallbackBanners = [
         {
@@ -60,7 +59,6 @@ router.get('/', requireAuth, async (req, res) => {
     res.json({ success: true, banners: result.rows });
   } catch (error) {
     console.error('❌ Get banners error:', error);
-    // Return fallback banners on error
     const fallbackBanners = [
       {
         id: 'banner_fallback_1',
@@ -101,8 +99,15 @@ router.get('/', requireAuth, async (req, res) => {
 router.post('/:id/view', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(`👁️ Tracking view for banner: ${id}`);
     
+    // ✅ Check if id is a valid UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      console.log(`⚠️ Invalid UUID format: ${id}, skipping`);
+      return res.json({ success: true });
+    }
+    
+    console.log(`👁️ Tracking view for banner: ${id}`);
     await query(
       'UPDATE banners SET views_count = views_count + 1 WHERE id = $1',
       [id]
@@ -111,7 +116,7 @@ router.post('/:id/view', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('❌ Track view error:', error);
-    res.json({ success: true }); // Always return success
+    res.json({ success: true });
   }
 });
 
@@ -121,8 +126,15 @@ router.post('/:id/view', requireAuth, async (req, res) => {
 router.post('/:id/click', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(`👆 Tracking click for banner: ${id}`);
     
+    // ✅ Check if id is a valid UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      console.log(`⚠️ Invalid UUID format: ${id}, skipping`);
+      return res.json({ success: true });
+    }
+    
+    console.log(`👆 Tracking click for banner: ${id}`);
     await query(
       'UPDATE banners SET clicks_count = clicks_count + 1 WHERE id = $1',
       [id]
