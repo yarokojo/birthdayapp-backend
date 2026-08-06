@@ -1,12 +1,19 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// ✅ Log the database URL (without password for security)
+const dbUrl = process.env.DATABASE_URL || '';
+console.log('📦 DATABASE_URL exists:', !!dbUrl);
+console.log('📦 DATABASE_URL length:', dbUrl.length);
+if (dbUrl) {
+  console.log('📦 DATABASE_URL prefix:', dbUrl.substring(0, 30) + '...');
+} else {
+  console.log('❌ DATABASE_URL is missing!');
+}
+
 const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'birthdayapp',
-  user: process.env.DB_USER || 'u0_a347',
-  password: process.env.DB_PASSWORD || '',
+  connectionString: dbUrl,
+  ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
@@ -17,7 +24,7 @@ pool.on('connect', () => {
 });
 
 pool.on('error', (err) => {
-  console.error('❌ PostgreSQL error:', err);
+  console.error('❌ PostgreSQL error:', err.message);
 });
 
 module.exports = {
