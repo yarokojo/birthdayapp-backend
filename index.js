@@ -166,3 +166,14 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log('  /api/calendar - Calendar routes');
   console.log('  /api/live     - Live streams routes');
 });
+
+// ✅ Temporary setup endpoint - remove after first run
+app.get('/api/setup', async (req, res) => {
+  try {
+    const { initDb } = require('./src/config/initDb');
+    await initDb();
+    res.json({ success: true, message: 'Database tables created!' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
