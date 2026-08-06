@@ -82,3 +82,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('✅ All routes registered!');
   console.log('  /api/auth - Auth routes');
 });
+// FORCE DEPLOY - Thu Aug  6 13:54:57 GMT 2026
