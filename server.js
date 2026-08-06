@@ -1,3 +1,3 @@
-// This file exists for Render compatibility
-// It just loads the main index.js file
+// ✅ Render compatibility file
+// This loads the main index.js with all routes
 require('./index.js');
