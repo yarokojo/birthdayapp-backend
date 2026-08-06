@@ -6,7 +6,7 @@ const compression = require('compression');
 const path = require('path');
 require('dotenv').config();
 
-// ✅ Import ALL routes
+// ✅ Import routes
 const authRoutes = require('./src/routes/auth');
 const postRoutes = require('./src/routes/posts');
 const walletRoutes = require('./src/routes/wallet');
@@ -22,6 +22,9 @@ const storiesRoutes = require('./src/routes/stories');
 const leaderboardRoutes = require('./src/routes/leaderboard');
 const calendarRoutes = require('./src/routes/calendar');
 const liveRoutes = require('./src/routes/live');
+
+// ✅ Import database initialization
+const { initDb } = require('./src/config/initDb');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -71,7 +74,6 @@ app.get('/health', (req, res) => {
 
 console.log('📋 Registering routes...');
 
-// ✅ ALL ROUTES
 app.use('/api/auth', authRoutes);
 console.log('  ✅ /api/auth registered');
 
@@ -140,8 +142,12 @@ app.use((err, req, res, next) => {
 // ============================================================
 // START SERVER
 // ============================================================
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  
+  // ✅ Initialize database tables
+  await initDb();
+  
   console.log('');
   console.log('📋 Registered Routes:');
   console.log('  /api/auth     - Auth routes');
