@@ -131,3 +131,4 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log('  /api/calendar - Calendar routes');
   console.log('  /api/live     - Live streams routes');
 });
+// Force deploy - Thu Aug  6 13:44:03 GMT 2026
