@@ -177,3 +177,14 @@ app.get('/api/setup', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ✅ Temporary setup endpoint - run once to create tables
+app.get('/api/setup', async (req, res) => {
+  try {
+    const { initDb } = require('./src/config/initDb');
+    await initDb();
+    res.json({ success: true, message: 'Database tables created!' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
