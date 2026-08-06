@@ -12,7 +12,6 @@ router.get('/', optionalAuth, async (req, res) => {
   try {
     console.log('📊 Fetching posts...');
     
-    // ✅ Get posts with user info
     const result = await query(
       `SELECT 
         p.*,
@@ -28,7 +27,6 @@ router.get('/', optionalAuth, async (req, res) => {
 
     console.log(`✅ Found ${result.rows.length} posts`);
     
-    // ✅ Get comments for each post
     const postsWithComments = await Promise.all(result.rows.map(async (post) => {
       const commentsResult = await query(
         `SELECT c.id, c.user_id, c.text, c.created_at, c.likes_count,
@@ -50,7 +48,6 @@ router.get('/', optionalAuth, async (req, res) => {
         likes: c.likes_count || 0,
       }));
       
-      // ✅ Check if user liked this post
       let isLiked = false;
       if (req.userId) {
         const likeResult = await query(
@@ -59,8 +56,6 @@ router.get('/', optionalAuth, async (req, res) => {
         );
         isLiked = likeResult.rows.length > 0;
       }
-      
-      console.log(`📝 Post ${post.id} has ${comments.length} comments`);
       
       return {
         id: post.id,
@@ -108,6 +103,11 @@ router.post('/', requireAuth, [
   body('video').optional(),
 ], async (req, res) => {
   try {
+    // ✅ DEBUG: Log the user info
+    console.log('📝 req.userId:', req.userId);
+    console.log('📝 req.user:', req.user);
+    console.log('📝 req.body:', req.body);
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -151,6 +151,7 @@ router.post('/', requireAuth, [
     );
     const user = userResult.rows[0] || { name: 'Unknown', username: 'unknown', profile_image: 'https://randomuser.me/api/portraits/men/1.jpg' };
 
+    console.log('✅ Post created:', post.id);
     res.status(201).json({
       ...post,
       authorName: user.name,
@@ -160,7 +161,8 @@ router.post('/', requireAuth, [
     });
   } catch (error) {
     console.error('❌ Create post error:', error);
-    res.status(500).json({ error: 'Failed to create post' });
+    console.error('❌ Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to create post', details: error.message });
   }
 });
 
@@ -270,8 +272,6 @@ router.post('/:id/comments', requireAuth, [
   }
 });
 
-module.exports = router;
-
 // ============================================================
 // DELETE /:postId/comments/:commentId - Delete a comment
 // ============================================================
@@ -280,7 +280,6 @@ router.delete('/:postId/comments/:commentId', requireAuth, async (req, res) => {
     const { postId, commentId } = req.params;
     console.log(`🗑️ Deleting comment ${commentId} from post ${postId}`);
     
-    // ✅ Check if comment exists and belongs to user
     const commentCheck = await query(
       'SELECT id, post_id FROM comments WHERE id = $1 AND user_id = $2',
       [commentId, req.userId]
@@ -290,17 +289,8 @@ router.delete('/:postId/comments/:commentId', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Comment not found or not authorized' });
     }
     
-    // ✅ Delete the comment
-    await query(
-      'DELETE FROM comments WHERE id = $1',
-      [commentId]
-    );
-    
-    // ✅ Decrement comments count on the post
-    await query(
-      'UPDATE posts SET comments_count = GREATEST(comments_count - 1, 0) WHERE id = $1',
-      [postId]
-    );
+    await query('DELETE FROM comments WHERE id = $1', [commentId]);
+    await query('UPDATE posts SET comments_count = GREATEST(comments_count - 1, 0) WHERE id = $1', [postId]);
     
     console.log(`✅ Comment ${commentId} deleted successfully`);
     res.json({ success: true });
@@ -318,13 +308,11 @@ router.post('/:id/bookmark', requireAuth, async (req, res) => {
     const { id } = req.params;
     console.log(`🔖 Bookmarking post ${id} for user ${req.userId}`);
     
-    // ✅ Check if post exists
     const postCheck = await query('SELECT id FROM posts WHERE id = $1', [id]);
     if (postCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Post not found' });
     }
     
-    // ✅ Add bookmark (insert or ignore duplicate)
     await query(
       'INSERT INTO bookmarks (post_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
       [id, req.userId]
@@ -356,3 +344,5 @@ router.delete('/:id/bookmark', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to remove bookmark' });
   }
 });
+
+module.exports = router;
