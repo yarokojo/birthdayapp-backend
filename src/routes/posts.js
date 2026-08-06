@@ -346,3 +346,66 @@ router.delete('/:id/bookmark', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+
+// ============================================================
+// PUT /:postId/comments/:commentId - Edit a comment
+// ============================================================
+router.put('/:postId/comments/:commentId', requireAuth, [
+  body('text').notEmpty().trim(),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    const { postId, commentId } = req.params;
+    const { text } = req.body;
+
+    console.log(`✏️ Editing comment ${commentId} on post ${postId}`);
+
+    // ✅ Check if comment exists and belongs to user
+    const commentCheck = await query(
+      'SELECT id, post_id FROM comments WHERE id = $1 AND user_id = $2',
+      [commentId, req.userId]
+    );
+
+    if (commentCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Comment not found or not authorized' });
+    }
+
+    // ✅ Update the comment
+    const result = await query(
+      `UPDATE comments 
+       SET text = $1, updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $2 
+       RETURNING id, post_id, user_id, text, created_at, updated_at, likes_count`,
+      [text.trim(), commentId]
+    );
+
+    const comment = result.rows[0];
+
+    // ✅ Get user info
+    const userResult = await query(
+      'SELECT name, profile_image FROM users WHERE id = $1',
+      [req.userId]
+    );
+    const user = userResult.rows[0] || { name: 'Unknown', profile_image: 'https://randomuser.me/api/portraits/men/1.jpg' };
+
+    console.log(`✅ Comment ${commentId} updated successfully`);
+
+    res.json({
+      id: comment.id,
+      userId: comment.user_id,
+      userName: user.name,
+      userAvatar: user.profile_image,
+      text: comment.text,
+      createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
+      likes: comment.likes_count || 0,
+    });
+  } catch (error) {
+    console.error('❌ Edit comment error:', error);
+    res.status(500).json({ error: 'Failed to edit comment' });
+  }
+});
