@@ -6,8 +6,22 @@ const compression = require('compression');
 const path = require('path');
 require('dotenv').config();
 
-// ✅ Import routes
+// ✅ Import ALL routes
 const authRoutes = require('./src/routes/auth');
+const postRoutes = require('./src/routes/posts');
+const walletRoutes = require('./src/routes/wallet');
+const friendRoutes = require('./src/routes/friends');
+const userRoutes = require('./src/routes/users');
+const notificationRoutes = require('./src/routes/notifications');
+const giftRoutes = require('./src/routes/gifts');
+const uploadRoutes = require('./src/routes/upload');
+const adminRoutes = require('./src/routes/admin');
+const settingsRoutes = require('./src/routes/settings');
+const bannersRoutes = require('./src/routes/banners');
+const storiesRoutes = require('./src/routes/stories');
+const leaderboardRoutes = require('./src/routes/leaderboard');
+const calendarRoutes = require('./src/routes/calendar');
+const liveRoutes = require('./src/routes/live');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -32,6 +46,9 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // ============================================================
 // ROUTES
 // ============================================================
@@ -53,8 +70,54 @@ app.get('/health', (req, res) => {
 });
 
 console.log('📋 Registering routes...');
+
+// ✅ ALL ROUTES
 app.use('/api/auth', authRoutes);
 console.log('  ✅ /api/auth registered');
+
+app.use('/api/users', userRoutes);
+console.log('  ✅ /api/users registered');
+
+app.use('/api/user', settingsRoutes);
+console.log('  ✅ /api/user registered');
+
+app.use('/api/posts', postRoutes);
+console.log('  ✅ /api/posts registered');
+
+app.use('/api/wallet', walletRoutes);
+console.log('  ✅ /api/wallet registered');
+
+app.use('/api/friends', friendRoutes);
+console.log('  ✅ /api/friends registered');
+
+app.use('/api/notifications', notificationRoutes);
+console.log('  ✅ /api/notifications registered');
+
+app.use('/api/gifts', giftRoutes);
+console.log('  ✅ /api/gifts registered');
+
+app.use('/api/upload', uploadRoutes);
+console.log('  ✅ /api/upload registered');
+
+app.use('/api/admin', adminRoutes);
+console.log('  ✅ /api/admin registered');
+
+app.use('/api/banners', bannersRoutes);
+console.log('  ✅ /api/banners registered');
+
+app.use('/api/stories', storiesRoutes);
+console.log('  ✅ /api/stories registered');
+
+app.use('/api/leaderboard', leaderboardRoutes);
+console.log('  ✅ /api/leaderboard registered');
+
+app.use('/api/calendar', calendarRoutes);
+console.log('  ✅ /api/calendar registered');
+
+app.use('/api/live', liveRoutes);
+console.log('  ✅ /api/live registered');
+
+console.log('✅ All routes registered!');
 
 // ============================================================
 // 404 Handler
@@ -79,7 +142,21 @@ app.use((err, req, res, next) => {
 // ============================================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log('✅ All routes registered!');
-  console.log('  /api/auth - Auth routes');
+  console.log('');
+  console.log('📋 Registered Routes:');
+  console.log('  /api/auth     - Auth routes');
+  console.log('  /api/users    - User routes');
+  console.log('  /api/user     - Settings routes');
+  console.log('  /api/posts    - Post routes');
+  console.log('  /api/wallet   - Wallet routes');
+  console.log('  /api/friends  - Friend routes');
+  console.log('  /api/notifications - Notification routes');
+  console.log('  /api/gifts    - Gift routes');
+  console.log('  /api/upload   - Upload routes');
+  console.log('  /api/admin    - Admin routes');
+  console.log('  /api/banners  - Banner routes');
+  console.log('  /api/stories  - Story routes');
+  console.log('  /api/leaderboard - Leaderboard routes');
+  console.log('  /api/calendar - Calendar routes');
+  console.log('  /api/live     - Live streams routes');
 });
-// FORCE DEPLOY - Thu Aug  6 13:54:57 GMT 2026
