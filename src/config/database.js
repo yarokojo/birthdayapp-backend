@@ -1,7 +1,6 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// ✅ Log the database URL (without password for security)
 const dbUrl = process.env.DATABASE_URL || '';
 console.log('📦 DATABASE_URL exists:', !!dbUrl);
 console.log('📦 DATABASE_URL length:', dbUrl.length);
@@ -11,12 +10,15 @@ if (dbUrl) {
   console.log('❌ DATABASE_URL is missing!');
 }
 
+const isCloudDb = dbUrl.includes('neon.tech') || dbUrl.includes('render.com');
+
 const pool = new Pool({
   connectionString: dbUrl,
-  ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false,
+  ssl: isCloudDb ? { rejectUnauthorized: false } : false,
   max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  idleTimeoutMillis: 60000,        // ✅ Increased to 60s
+  connectionTimeoutMillis: 60000,   // ✅ Increased to 60s
+  keepAlive: true,                  // ✅ Keep connections alive
 });
 
 pool.on('connect', () => {
@@ -27,7 +29,25 @@ pool.on('error', (err) => {
   console.error('❌ PostgreSQL error:', err.message);
 });
 
+// ✅ Add retry logic for queries
+const queryWithRetry = async (text, params, retries = 3) => {
+  let lastError;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const result = await pool.query(text, params);
+      return result;
+    } catch (error) {
+      lastError = error;
+      console.log(`⚠️ Query failed (attempt ${i + 1}/${retries}):`, error.message);
+      if (i < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
+};
+
 module.exports = {
-  query: (text, params) => pool.query(text, params),
+  query: queryWithRetry,
   pool,
 };
