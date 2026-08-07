@@ -14,7 +14,6 @@ const friendRoutes = require('./src/routes/friends');
 const userRoutes = require('./src/routes/users');
 const notificationRoutes = require('./src/routes/notifications');
 const giftRoutes = require('./src/routes/gifts');
-const uploadRoutes = require('./src/routes/upload');
 const adminRoutes = require('./src/routes/admin');
 const settingsRoutes = require('./src/routes/settings');
 const bannersRoutes = require('./src/routes/banners');
@@ -98,7 +97,6 @@ console.log('  ✅ /api/notifications registered');
 app.use('/api/gifts', giftRoutes);
 console.log('  ✅ /api/gifts registered');
 
-app.use('/api/upload', uploadRoutes);
 console.log('  ✅ /api/upload registered');
 
 app.use('/api/admin', adminRoutes);
@@ -260,6 +258,14 @@ app.get('/api/force-setup', async (req, res) => {
 });
 
 // ✅ Upload routes
+console.log('  ✅ /api/upload registered');
+
+// ✅ Upload routes
 const uploadRoutes = require('./src/routes/upload');
 app.use('/api/upload', uploadRoutes);
 console.log('  ✅ /api/upload registered');
+
+// ✅ TEST ROUTE - NO AUTH
+const uploadTestRoutes = require('./src/routes/upload-test');
+app.use('/api/upload-test', uploadTestRoutes);
+console.log('  ✅ /api/upload-test registered (no auth)');

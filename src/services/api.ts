@@ -154,17 +154,17 @@ export const postsApi = {
 };
 
 // ============================================================
-// ✅ UPLOAD IMAGE - WORKING VERSION
+// ✅ UPLOAD IMAGE - EXPORTED FUNCTION
 // ============================================================
 export const uploadImage = async (imageUri: string): Promise<string> => {
   console.log('📸 Uploading image:', imageUri);
   
   try {
-    // ✅ Get file info
+    // Get file info
     const fileInfo = await FileSystem.getInfoAsync(imageUri);
     console.log('📊 File size:', fileInfo.size);
     
-    // ✅ Create form data
+    // Create form data
     const formData = new FormData();
     const filename = imageUri.split('/').pop() || 'profile.jpg';
     const match = /\.(\w+)$/.exec(filename);
@@ -176,7 +176,7 @@ export const uploadImage = async (imageUri: string): Promise<string> => {
       type: type,
     } as any);
     
-    // ✅ Upload
+    // Upload
     const response = await api.post('/upload/image', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
