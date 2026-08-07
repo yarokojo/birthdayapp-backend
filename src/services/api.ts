@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 
+// ✅ Use .env for API_URL
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 console.log('🌐 API_URL:', API_URL);
@@ -27,10 +28,8 @@ api.interceptors.request.use(
         token = await SecureStore.getItemAsync('token');
       }
       
-      // ✅ DEBUG: Log token status
       console.log('🔑 Token exists:', !!token);
       console.log('🔑 Token length:', token?.length || 0);
-      console.log('🔑 Token prefix:', token?.substring(0, 20) + '...');
       
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
@@ -92,7 +91,7 @@ export const authApi = {
 };
 
 // ============================================================
-// FRIENDS API - ALL USE UUIDs (strings)
+// FRIENDS API
 // ============================================================
 export const friendsApi = {
   getList: async (userId?: string) => {
@@ -185,8 +184,47 @@ export const postsApi = {
 };
 
 // ============================================================
-// UPLOAD VIDEO
+// UPLOAD FUNCTIONS
 // ============================================================
+
+// ✅ Upload Image
+export const uploadImage = async (imageUri: string): Promise<string> => {
+  console.log('📸 uploadImage called with URI:', imageUri);
+  
+  try {
+    const formData = new FormData();
+    const filename = imageUri.split('/').pop() || 'image.jpg';
+    const match = /\.(\w+)$/.exec(filename);
+    const fileType = match ? `image/${match[1]}` : 'image/jpeg';
+    
+    const fileObject = {
+      uri: imageUri,
+      type: fileType,
+      name: filename,
+    } as any;
+    
+    formData.append('image', fileObject);
+    
+    console.log('📤 Uploading image...');
+    console.log('📤 File name:', filename);
+    console.log('📤 File type:', fileType);
+    
+    const response = await api.post('/upload/image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 30000,
+    });
+    
+    console.log('✅ Image uploaded successfully');
+    return response.data.imageUrl;
+  } catch (error: any) {
+    console.error('❌ Image upload error:', error.response?.data || error.message);
+    throw new Error(error.response?.data?.error || 'Failed to upload image');
+  }
+};
+
+// ✅ Upload Video
 export const uploadVideo = async (videoUri: string): Promise<string> => {
   console.log('🎬 uploadVideo called with URI:', videoUri);
   
