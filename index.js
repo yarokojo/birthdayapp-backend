@@ -1581,44 +1581,6 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`📡 Live Streams: ${data.liveStreams?.length || 0}`);
   console.log(`📅 Calendar events: ${Object.keys(data.calendarEvents || {}).length} users have events`);
 });
-// ============ UPLOAD IMAGE ROUTE ============
-const imageStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'image-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const imageUpload = multer({
-  storage: imageStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'), false);
-    }
-  }
-});
-
-app.post('/api/upload/image', imageUpload.single('image'), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No image file uploaded' });
-    }
-    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-    console.log('📸 Image uploaded:', imageUrl);
-    res.json({ success: true, imageUrl });
-  } catch (error) {
-    console.error('❌ Image upload error:', error);
-    res.status(500).json({ error: 'Image upload failed' });
-  }
-});
-
-// ============ FRIEND BIRTHDAYS ============
 app.get('/api/friends/birthdays', verifyToken, (req, res) => {
   const userId = req.userId;
   const friendships = data.friendships.filter(f => f.userId === userId);
@@ -1806,6 +1768,164 @@ app.get('/api/leaderboard', (req, res) => {
       const post = data.posts.find(p => p.id === l.postId);
       return post && post.userId === user.id;
     }).length;
+    
+    const score = (postCount * 10) + (giftReceived * 2) + (likesReceived * 5);
+    
+    return {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      score,
+      wishesSent: 0,
+      giftsSent: data.wallets[user.id]?.totalSent || 0,
+      rank: 0
+    };
+  });
+  
+  const sorted = usersWithScore.sort((a, b) => b.score - a.score);
+  sorted.forEach((user, index) => {
+    user.rank = index + 1;
+  });
+  
+  res.json({ users: sorted });
+});
+
+// ============ ADDITIONAL ROUTES (NO DUPLICATES) ============
+
+// Friend Birthdays
+app.get('/api/friends/birthdays', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const friendships = data.friendships.filter(f => f.userId === userId);
+  const friendsBirthdays = friendships
+    .map(f => {
+      const friend = data.users.find(u => u.id === f.friendId);
+      if (!friend || !friend.birthDate) return null;
+      return {
+        id: friend.id,
+        name: friend.name,
+        username: friend.username,
+        birthDate: friend.birthDate,
+        avatar: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
+      };
+    })
+    .filter(Boolean);
+  res.json({ friendsBirthdays });
+});
+
+// Notification Preferences
+app.get('/api/user/notifications/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+    saveData();
+  }
+  res.json({ success: true, notifications: data.userSettings[userId].notifications });
+});
+
+app.put('/api/user/notifications/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { enabled } = req.body;
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+  }
+  if (enabled !== undefined) {
+    data.userSettings[userId].notifications.enabled = enabled;
+  }
+  saveData();
+  res.json({ success: true, notifications: data.userSettings[userId].notifications });
+});
+
+// Media Preferences
+app.get('/api/user/:userId/media', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+    saveData();
+  }
+  const media = data.userSettings[userId].media || {
+    autoPlayVideos: true,
+    soundEnabled: true,
+    vibrationEnabled: true
+  };
+  res.json({ success: true, media });
+});
+
+app.put('/api/user/:userId/media', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { autoPlayVideos, soundEnabled, vibrationEnabled } = req.body;
+  
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+  }
+  
+  if (!data.userSettings[userId].media) {
+    data.userSettings[userId].media = {
+      autoPlayVideos: true,
+      soundEnabled: true,
+      vibrationEnabled: true
+    };
+  }
+  
+  if (autoPlayVideos !== undefined) data.userSettings[userId].media.autoPlayVideos = autoPlayVideos;
+  if (soundEnabled !== undefined) data.userSettings[userId].media.soundEnabled = soundEnabled;
+  if (vibrationEnabled !== undefined) data.userSettings[userId].media.vibrationEnabled = vibrationEnabled;
+  
+  saveData();
+  res.json({ success: true, media: data.userSettings[userId].media });
+});
+
+// Support Feedback
+app.post('/api/user/support/feedback', verifyToken, (req, res) => {
+  const { feedback, email } = req.body;
+  const userId = req.userId;
+  console.log(`📝 Feedback from user ${userId}: ${feedback}`);
+  
+  if (!feedback) {
+    return res.status(400).json({ error: 'Feedback is required' });
+  }
+  
+  if (!data.feedbacks) data.feedbacks = [];
+  data.feedbacks.push({
+    id: Date.now().toString(),
+    userId,
+    feedback,
+    email: email || '',
+    createdAt: new Date().toISOString()
+  });
+  saveData();
+  
+  res.json({ success: true, message: 'Feedback sent successfully' });
+});
+
+// Leaderboard
+app.get('/api/leaderboard', (req, res) => {
+  const { timeframe } = req.query;
+  console.log(`📊 Getting leaderboard for timeframe: ${timeframe}`);
+  
+  const usersWithScore = data.users.map(user => {
+    const postCount = data.posts.filter(p => p.userId === user.id).length;
+    const giftReceived = data.wallets[user.id]?.totalReceived || 0;
+    const likesReceived = data.postLikes ? data.postLikes.filter(l => {
+      const post = data.posts.find(p => p.id === l.postId);
+      return post && post.userId === user.id;
+    }).length : 0;
     
     const score = (postCount * 10) + (giftReceived * 2) + (likesReceived * 5);
     
