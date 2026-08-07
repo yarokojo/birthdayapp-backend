@@ -2,7 +2,6 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { query } = require('../config/database');
 const { requireAuth } = require('../middleware/auth');
-const { MEOLCOMPANY_UUID } = require('../config/seed');
 
 const router = express.Router();
 
@@ -11,6 +10,8 @@ const router = express.Router();
 // ============================================================
 router.get('/balance', requireAuth, async (req, res) => {
   try {
+    console.log(`💰 Getting balance for user: ${req.userId}`);
+    
     const result = await query(
       `SELECT balance, total_received, total_sent, total_withdrawn, total_fees_paid
        FROM wallets WHERE user_id = $1`,
@@ -24,7 +25,7 @@ router.get('/balance', requireAuth, async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Get balance error:', error);
+    console.error('❌ Get balance error:', error);
     res.status(500).json({ error: 'Failed to get balance' });
   }
 });
@@ -34,6 +35,8 @@ router.get('/balance', requireAuth, async (req, res) => {
 // ============================================================
 router.get('/transactions', requireAuth, async (req, res) => {
   try {
+    console.log(`📊 Getting transactions for user: ${req.userId}`);
+    
     const result = await query(
       `SELECT id, type, amount, fee, description, status, network, phone_number, created_at
        FROM transactions
@@ -45,13 +48,13 @@ router.get('/transactions', requireAuth, async (req, res) => {
 
     res.json({ transactions: result.rows });
   } catch (error) {
-    console.error('Get transactions error:', error);
+    console.error('❌ Get transactions error:', error);
     res.status(500).json({ error: 'Failed to get transactions' });
   }
 });
 
 // ============================================================
-// POST /withdraw - Withdraw funds (1% fee to MeolCompany)
+// POST /withdraw - Withdraw funds
 // ============================================================
 router.post('/withdraw', requireAuth, [
   body('amount').isFloat({ min: 10 }).withMessage('Minimum withdrawal is ₵10'),
@@ -59,71 +62,77 @@ router.post('/withdraw', requireAuth, [
   body('phoneNumber').notEmpty().isLength({ min: 9 }).withMessage('Valid phone number is required'),
 ], async (req, res) => {
   try {
+    console.log('💰 ===== WITHDRAWAL REQUEST =====');
+    console.log('📝 req.userId:', req.userId);
+    console.log('📝 req.body:', req.body);
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('❌ Validation errors:', errors.array());
       return res.status(400).json({ error: errors.array()[0].msg });
     }
 
     const { amount, network, phoneNumber } = req.body;
     const userId = req.userId;
+    const withdrawalAmount = parseFloat(amount);
 
-    // Get wallet
+    console.log(`💰 Withdrawing ₵${withdrawalAmount} to ${network} • ${phoneNumber}`);
+
+    // ✅ Step 1: Check if user exists
+    console.log('📌 Step 1: Checking user...');
+    const userCheck = await query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0) {
+      console.log('❌ User not found');
+      return res.status(404).json({ error: 'User not found' });
+    }
+    console.log('✅ User found');
+
+    // ✅ Step 2: Check wallet balance
+    console.log('📌 Step 2: Getting wallet...');
     const walletResult = await query(
       'SELECT balance FROM wallets WHERE user_id = $1',
       [userId]
     );
 
     if (walletResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Wallet not found' });
+      console.log('❌ Wallet not found, creating one...');
+      await query('INSERT INTO wallets (user_id) VALUES ($1)', [userId]);
+      return res.status(400).json({ error: 'Insufficient balance' });
     }
 
     const balance = parseFloat(walletResult.rows[0].balance);
-    const withdrawalAmount = parseFloat(amount);
+    console.log(`📊 Current balance: ₵${balance}`);
 
     if (withdrawalAmount > balance) {
+      console.log(`❌ Insufficient balance. Available: ₵${balance}, Requested: ₵${withdrawalAmount}`);
       return res.status(400).json({ error: `Insufficient balance. Available: ₵${balance.toFixed(2)}` });
     }
 
-    // ✅ 1% withdrawal fee
+    // ✅ Step 3: Calculate fee (1%)
     const feePercentage = parseFloat(process.env.WITHDRAWAL_FEE_PERCENTAGE || 0.01);
     const fee = withdrawalAmount * feePercentage;
     const totalDeduction = withdrawalAmount + fee;
     const newBalance = balance - totalDeduction;
 
-    // ✅ Update user's wallet
+    console.log(`💰 Fee: ₵${fee.toFixed(2)} (${feePercentage * 100}%)`);
+    console.log(`💰 Total deduction: ₵${totalDeduction.toFixed(2)}`);
+    console.log(`💰 New balance: ₵${newBalance.toFixed(2)}`);
+
+    // ✅ Step 4: Update wallet
+    console.log('📌 Step 4: Updating wallet...');
     await query(
       `UPDATE wallets 
        SET balance = $1, 
            total_withdrawn = total_withdrawn + $2, 
            total_fees_paid = total_fees_paid + $3, 
-           updated_at = CURRENT_TIMESTAMP, 
-           version = version + 1
+           updated_at = CURRENT_TIMESTAMP
        WHERE user_id = $4`,
       [newBalance, withdrawalAmount, fee, userId]
     );
+    console.log('✅ Wallet updated');
 
-    // ✅ ADD FEE TO MEOLCOMPANY WALLET
-    // Check if MeolCompany wallet exists
-    const meolCheck = await query('SELECT id FROM wallets WHERE user_id = $1', [MEOLCOMPANY_UUID]);
-    if (meolCheck.rows.length === 0) {
-      await query(
-        'INSERT INTO wallets (user_id, balance, total_received) VALUES ($1, $2, $3)',
-        [MEOLCOMPANY_UUID, 0, 0]
-      );
-    }
-    
-    // Add fee to MeolCompany wallet
-    await query(
-      `UPDATE wallets 
-       SET balance = balance + $1,
-           total_received = total_received + $1,
-           updated_at = CURRENT_TIMESTAMP,
-           version = version + 1
-       WHERE user_id = $2`,
-      [fee, MEOLCOMPANY_UUID]
-    );
-
-    // Create transaction for user
+    // ✅ Step 5: Create transaction record
+    console.log('📌 Step 5: Creating transaction...');
     await query(
       `INSERT INTO transactions (
         user_id, 
@@ -138,42 +147,24 @@ router.post('/withdraw', requireAuth, [
       ) VALUES ($1, 'withdrawal', $2, $3, $4, 'completed', $5, $6, CURRENT_TIMESTAMP)`,
       [userId, withdrawalAmount, fee, `Withdrawal to ${network}`, network, phoneNumber]
     );
-
-    // ✅ Create transaction for MeolCompany (fee collected)
-    await query(
-      `INSERT INTO transactions (
-        user_id, 
-        type, 
-        amount, 
-        description, 
-        status, 
-        completed_at
-      ) VALUES ($1, 'fee_collected', $2, $3, 'completed', CURRENT_TIMESTAMP)`,
-      [MEOLCOMPANY_UUID, fee, `Withdrawal fee from user (${withdrawalAmount} × 1%)`]
-    );
-
-    const userReceives = withdrawalAmount - fee;
+    console.log('✅ Transaction created');
 
     console.log(`✅ Withdrawal successful!`);
-    console.log(`   User receives: ₵${userReceives.toFixed(2)} to ${network}`);
-    console.log(`   MeolCompany fee: ₵${fee.toFixed(2)} (1%)`);
+    console.log(`   User receives: ₵${(withdrawalAmount - fee).toFixed(2)} to ${network}`);
+    console.log(`   Fee: ₵${fee.toFixed(2)} (${feePercentage * 100}%)`);
     console.log(`   New balance: ₵${newBalance.toFixed(2)}`);
 
     res.json({
       success: true,
       newBalance,
       fee,
-      userReceives: userReceives,
+      userReceives: withdrawalAmount - fee,
       amount: withdrawalAmount,
-      company: {
-        name: 'MeolCompany',
-        account: '0596270302',
-        feeCollected: fee
-      }
     });
   } catch (error) {
-    console.error('Withdraw error:', error);
-    res.status(500).json({ error: 'Failed to process withdrawal' });
+    console.error('❌ Withdrawal error:', error);
+    console.error('❌ Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to process withdrawal', details: error.message });
   }
 });
 
@@ -198,19 +189,24 @@ router.post('/add-gift', requireAuth, [
     const amount = parseFloat(giftAmount);
     const senderName = isAnonymous ? 'Anonymous' : (fromName || 'Someone');
 
-    // Check if user exists
+    // ✅ Check if user exists
     const userCheck = await query('SELECT id FROM users WHERE id = $1', [celebrantId]);
     if (userCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Celebrant not found' });
     }
 
-    // Update wallet
+    // ✅ Check if wallet exists
+    const walletCheck = await query('SELECT id FROM wallets WHERE user_id = $1', [celebrantId]);
+    if (walletCheck.rows.length === 0) {
+      await query('INSERT INTO wallets (user_id) VALUES ($1)', [celebrantId]);
+    }
+
+    // ✅ Update wallet
     const result = await query(
       `UPDATE wallets 
        SET balance = balance + $1, 
            total_received = total_received + $1,
-           updated_at = CURRENT_TIMESTAMP, 
-           version = version + 1
+           updated_at = CURRENT_TIMESTAMP
        WHERE user_id = $2
        RETURNING balance`,
       [amount, celebrantId]
@@ -218,7 +214,7 @@ router.post('/add-gift', requireAuth, [
 
     const newBalance = result.rows[0].balance;
 
-    // Create transaction
+    // ✅ Create transaction
     await query(
       `INSERT INTO transactions (
         user_id, 
@@ -237,7 +233,7 @@ router.post('/add-gift', requireAuth, [
       message: `₵${amount} added to wallet for ${celebrantName}`,
     });
   } catch (error) {
-    console.error('Add gift error:', error);
+    console.error('❌ Add gift error:', error);
     res.status(500).json({ error: 'Failed to add gift' });
   }
 });
