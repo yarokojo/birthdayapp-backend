@@ -337,3 +337,59 @@ router.delete('/:postId/comments/:commentId', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+
+// ============================================================
+// POST /:id/bookmark - Bookmark a post
+// ============================================================
+router.post('/:id/bookmark', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    // Check if post exists
+    const postCheck = await query('SELECT id FROM posts WHERE id = $1', [id]);
+    if (postCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    // Check if already bookmarked
+    const existing = await query(
+      'SELECT id FROM bookmarks WHERE post_id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    if (existing.rows.length === 0) {
+      await query(
+        'INSERT INTO bookmarks (post_id, user_id) VALUES ($1, $2)',
+        [id, userId]
+      );
+      console.log(`📌 User ${userId} bookmarked post ${id}`);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Bookmark error:', error);
+    res.status(500).json({ error: 'Failed to bookmark post' });
+  }
+});
+
+// ============================================================
+// DELETE /:id/bookmark - Unbookmark a post
+// ============================================================
+router.delete('/:id/bookmark', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    await query(
+      'DELETE FROM bookmarks WHERE post_id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    console.log(`📌 User ${userId} unbookmarked post ${id}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Unbookmark error:', error);
+    res.status(500).json({ error: 'Failed to unbookmark post' });
+  }
+});
