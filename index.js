@@ -269,3 +269,8 @@ console.log('  ✅ /api/upload registered');
 const uploadTestRoutes = require('./src/routes/upload-test');
 app.use('/api/upload-test', uploadTestRoutes);
 console.log('  ✅ /api/upload-test registered (no auth)');
+
+// ✅ TEST ROUTE - NO AUTH (for debugging)
+const uploadTestRoutes = require('./src/routes/upload-test');
+app.use('/api/upload-test', uploadTestRoutes);
+console.log('  ✅ /api/upload-test registered (no auth)');
