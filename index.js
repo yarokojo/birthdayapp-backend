@@ -1948,3 +1948,24 @@ app.get('/api/leaderboard', (req, res) => {
   
   res.json({ users: sorted });
 });
+
+// ============ USER PROFILE ENDPOINT ============
+app.get('/api/users/profile', verifyToken, (req, res) => {
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  res.json({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    username: user.username,
+    bio: user.bio || '',
+    location: user.location || '',
+    profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    birthDate: user.birthDate || null,
+    phone: user.phone || '',
+    network: user.network || 'MTN',
+    createdAt: user.created_at
+  });
+});
