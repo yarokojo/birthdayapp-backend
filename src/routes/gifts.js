@@ -29,7 +29,7 @@ router.get('/', async (req, res) => {
 });
 
 // ============================================================
-// POST /purchase - Purchase a gift (SENDER PAYS VIA MOMO)
+// POST /purchase - Purchase a gift
 // ============================================================
 router.post('/purchase', requireAuth, [
   body('giftId').notEmpty().withMessage('Gift ID is required'),
@@ -41,6 +41,10 @@ router.post('/purchase', requireAuth, [
   body('phoneNumber').optional().isString(),
 ], async (req, res) => {
   try {
+    console.log('🎁 ===== GIFT PURCHASE REQUEST =====');
+    console.log('📝 req.userId:', req.userId);
+    console.log('📝 req.body:', req.body);
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       console.log('❌ Validation errors:', errors.array());
@@ -60,33 +64,39 @@ router.post('/purchase', requireAuth, [
     const senderId = req.userId;
     const giftAmount = parseFloat(amount);
 
-    console.log(`🎁 Purchase request:`);
-    console.log(`  Sender: ${senderId}`);
-    console.log(`  Recipient: ${recipientId} (${recipientName})`);
-    console.log(`  Gift: ${giftName} (₵${giftAmount})`);
-    console.log(`  Network: ${network || 'MTN'}`);
-    console.log(`  Phone: ${phoneNumber || 'Not provided'}`);
+    console.log(`🎁 Sender: ${senderId}`);
+    console.log(`🎁 Recipient: ${recipientId} (${recipientName})`);
+    console.log(`🎁 Gift: ${giftName} (₵${giftAmount})`);
 
-    // ✅ Check if recipient exists
-    const userCheck = await query('SELECT id, name FROM users WHERE id = $1', [recipientId]);
-    if (userCheck.rows.length === 0) {
-      console.log(`❌ Recipient not found: ${recipientId}`);
-      return res.status(404).json({ error: 'Recipient not found' });
-    }
-
-    // ✅ Check if sender exists
+    // ✅ Step 1: Check if sender exists
+    console.log('📌 Step 1: Checking sender...');
     const senderCheck = await query('SELECT id, name FROM users WHERE id = $1', [senderId]);
     if (senderCheck.rows.length === 0) {
       console.log(`❌ Sender not found: ${senderId}`);
       return res.status(404).json({ error: 'Sender not found' });
     }
+    console.log(`✅ Sender found: ${senderCheck.rows[0].name}`);
 
-    // ✅ NO WALLET BALANCE CHECK - Sender pays via Mobile Money directly
-    // The sender's wallet is NOT used for sending gifts
+    // ✅ Step 2: Check if recipient exists
+    console.log('📌 Step 2: Checking recipient...');
+    const userCheck = await query('SELECT id, name FROM users WHERE id = $1', [recipientId]);
+    if (userCheck.rows.length === 0) {
+      console.log(`❌ Recipient not found: ${recipientId}`);
+      return res.status(404).json({ error: 'Recipient not found' });
+    }
+    console.log(`✅ Recipient found: ${userCheck.rows[0].name}`);
 
-    // ✅ Add gift to recipient's wallet (FULL AMOUNT - NO FEE)
-    console.log(`💰 Adding ₵${giftAmount} to recipient ${recipientName}'s wallet`);
-    
+    // ✅ Step 3: Check if recipient has a wallet
+    console.log('📌 Step 3: Checking/wallet...');
+    const walletCheck = await query('SELECT id FROM wallets WHERE user_id = $1', [recipientId]);
+    if (walletCheck.rows.length === 0) {
+      console.log(`💰 Creating wallet for recipient: ${recipientId}`);
+      await query('INSERT INTO wallets (user_id) VALUES ($1)', [recipientId]);
+    }
+    console.log('✅ Wallet ready');
+
+    // ✅ Step 4: Add gift to recipient's wallet
+    console.log(`📌 Step 4: Adding ₵${giftAmount} to recipient's wallet...`);
     await query(
       `UPDATE wallets 
        SET balance = balance + $1, 
@@ -96,8 +106,10 @@ router.post('/purchase', requireAuth, [
        WHERE user_id = $2`,
       [giftAmount, recipientId]
     );
+    console.log(`✅ Added ₵${giftAmount} to recipient's wallet`);
 
-    // ✅ Create gift transaction record
+    // ✅ Step 5: Create gift transaction record
+    console.log('📌 Step 5: Creating gift record...');
     const giftResult = await query(
       `INSERT INTO gifts (
         sender_id, 
@@ -113,8 +125,10 @@ router.post('/purchase', requireAuth, [
       RETURNING id`,
       [senderId, recipientId, giftId, giftName, giftAmount, network || 'MTN', phoneNumber || '']
     );
+    console.log(`✅ Gift record created: ${giftResult.rows[0].id}`);
 
-    // ✅ Create transaction record for recipient
+    // ✅ Step 6: Create transaction record for recipient
+    console.log('📌 Step 6: Creating recipient transaction...');
     await query(
       `INSERT INTO transactions (
         user_id, 
@@ -126,8 +140,10 @@ router.post('/purchase', requireAuth, [
       ) VALUES ($1, 'gift_received', $2, $3, 'completed', CURRENT_TIMESTAMP)`,
       [recipientId, giftAmount, `Gift received: ${giftName} from ${senderCheck.rows[0].name || 'Someone'}`]
     );
+    console.log('✅ Recipient transaction created');
 
-    // ✅ Create transaction record for sender (for history)
+    // ✅ Step 7: Create transaction record for sender
+    console.log('📌 Step 7: Creating sender transaction...');
     await query(
       `INSERT INTO transactions (
         user_id, 
@@ -139,10 +155,10 @@ router.post('/purchase', requireAuth, [
       ) VALUES ($1, 'gift_sent', $2, $3, 'completed', CURRENT_TIMESTAMP)`,
       [senderId, giftAmount, `Gift sent: ${giftName} to ${recipientName}`]
     );
+    console.log('✅ Sender transaction created');
 
     console.log(`✅ Gift purchase successful!`);
     console.log(`   Recipient ${recipientName} now has ₵${giftAmount} added to wallet`);
-    console.log(`   Sender paid ₵${giftAmount} via Mobile Money`);
 
     res.json({ 
       success: true, 
@@ -155,7 +171,8 @@ router.post('/purchase', requireAuth, [
 
   } catch (error) {
     console.error('❌ Purchase gift error:', error);
-    res.status(500).json({ error: 'Failed to purchase gift. Please try again.' });
+    console.error('❌ Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to purchase gift. Please try again.', details: error.message });
   }
 });
 
