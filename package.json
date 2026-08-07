@@ -1,58 +1,31 @@
 {
-  "name": "BirthdayApp",
-  "version": "1.0.0",
-  "main": "index.ts",
+  "name": "birthdayapp-backend",
+  "version": "3.0.0",
+  "description": "BirthdayApp Backend API",
+  "main": "index.js",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "axios": "^1.18.1",
-    "expo": "~54.0.35",
-    "expo-av": "~16.0.8",
-    "expo-blur": "~15.0.8",
-    "expo-calendar": "~57.0.1",
-    "expo-camera": "~17.0.10",
-    "expo-clipboard": "~8.0.8",
-    "expo-constants": "~18.0.13",
-    "expo-contacts": "~57.0.3",
-    "expo-device": "~57.0.1",
-    "expo-document-picker": "~57.0.1",
-    "expo-file-system": "~19.0.23",
-    "expo-haptics": "~15.0.8",
-    "expo-image-manipulator": "~14.0.8",
-    "expo-image-picker": "~17.0.11",
-    "expo-linear-gradient": "~15.0.8",
-    "expo-localization": "~17.0.3",
-    "expo-location": "~19.0.8",
-    "expo-media-library": "~18.2.1",
-    "expo-modules-core": "~3.0.30",
-    "expo-notifications": "~0.30.0",
-    "expo-secure-store": "~15.0.8",
-    "expo-sharing": "~57.0.10",
-    "expo-status-bar": "~3.0.9",
-    "expo-store-review": "~57.0.1",
-    "i18next": "^26.3.6",
-    "i18next-browser-languagedetector": "^8.2.1",
-    "i18next-http-backend": "^4.0.0",
-    "lucide-react-native": "^1.24.0",
-    "qrcode": "~1.5.4",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "react-i18next": "^17.0.8",
-    "react-native": "0.81.5",
-    "react-native-qrcode-svg": "^6.3.21",
-    "react-native-safe-area-context": "~5.6.0",
-    "react-native-svg": "15.12.1",
-    "react-native-web": "^0.21.0",
-    "whatwg-url-without-unicode": "^8.0.0-3"
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.10.0",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "@types/react": "~19.1.0",
-    "@types/react-native": "^0.72.8",
-    "typescript": "~5.9.2"
+    "nodemon": "^2.0.22"
   },
-  "private": true
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
