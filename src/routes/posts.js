@@ -281,3 +281,59 @@ router.post('/:id/comments', requireAuth, [
 });
 
 module.exports = router;
+
+// ============================================================
+// DELETE /:postId/comments/:commentId - Delete a comment
+// ============================================================
+router.delete('/:postId/comments/:commentId', requireAuth, async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const userId = req.userId;
+
+    console.log(`🗑️ Deleting comment ${commentId} from post ${postId} by user ${userId}`);
+
+    // Check if comment exists and belongs to user
+    const commentResult = await query(
+      'SELECT user_id FROM comments WHERE id = $1 AND post_id = $2',
+      [commentId, postId]
+    );
+
+    if (commentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Comment not found' });
+    }
+
+    const comment = commentResult.rows[0];
+
+    // Check if user is the comment author or post owner
+    const postResult = await query(
+      'SELECT user_id FROM posts WHERE id = $1',
+      [postId]
+    );
+
+    const postOwnerId = postResult.rows[0]?.user_id;
+
+    if (comment.user_id !== userId && postOwnerId !== userId) {
+      return res.status(403).json({ error: 'Not authorized to delete this comment' });
+    }
+
+    // Delete the comment
+    await query(
+      'DELETE FROM comments WHERE id = $1 AND post_id = $2',
+      [commentId, postId]
+    );
+
+    // Decrement comment count
+    await query(
+      'UPDATE posts SET comments_count = GREATEST(comments_count - 1, 0) WHERE id = $1',
+      [postId]
+    );
+
+    console.log(`✅ Comment ${commentId} deleted successfully`);
+    res.json({ success: true, message: 'Comment deleted successfully' });
+  } catch (error) {
+    console.error('❌ Delete comment error:', error);
+    res.status(500).json({ error: 'Failed to delete comment' });
+  }
+});
+
+module.exports = router;
