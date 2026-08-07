@@ -11,7 +11,15 @@ const router = express.Router();
 router.get('/', optionalAuth, async (req, res) => {
   try {
     console.log('📊 Fetching posts...');
+    console.log('📊 User ID:', req.userId || 'Not authenticated');
+    console.log('📊 User:', req.user || 'Not authenticated');
     
+    // ✅ Check if posts table exists
+    const tableCheck = await query(
+      "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'posts')"
+    );
+    console.log('📊 Posts table exists:', tableCheck.rows[0].exists);
+
     const result = await query(
       `SELECT 
         p.*,
@@ -87,9 +95,11 @@ router.get('/', optionalAuth, async (req, res) => {
       };
     }));
     
+    console.log(`✅ Returning ${postsWithComments.length} posts with comments`);
     res.json(postsWithComments);
   } catch (error) {
     console.error('❌ Get posts error:', error);
+    console.error('❌ Error stack:', error.stack);
     res.status(500).json({ error: 'Failed to get posts', details: error.message });
   }
 });
@@ -103,10 +113,8 @@ router.post('/', requireAuth, [
   body('video').optional(),
 ], async (req, res) => {
   try {
-    // ✅ DEBUG: Log the user info
-    console.log('📝 req.userId:', req.userId);
-    console.log('📝 req.user:', req.user);
-    console.log('📝 req.body:', req.body);
+    console.log('📝 Creating post...');
+    console.log('📝 User ID:', req.userId);
     
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -199,7 +207,7 @@ router.post('/:id/like', requireAuth, async (req, res) => {
     try {
       await query('INSERT INTO post_likes (post_id, user_id) VALUES ($1, $2)', [id, req.userId]);
     } catch (e) {}
-    await query('SELECT increment_likes($1)', [id]);
+    await query('UPDATE posts SET likes_count = likes_count + 1 WHERE id = $1', [id]);
     res.json({ success: true });
   } catch (error) {
     console.error('❌ Like post error:', error);
@@ -214,7 +222,7 @@ router.delete('/:id/like', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     await query('DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2', [id, req.userId]);
-    await query('SELECT decrement_likes($1)', [id]);
+    await query('UPDATE posts SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1', [id]);
     res.json({ success: true });
   } catch (error) {
     console.error('❌ Unlike post error:', error);
@@ -248,7 +256,7 @@ router.post('/:id/comments', requireAuth, [
       [id, req.userId, text.trim()]
     );
 
-    await query('SELECT increment_comments($1)', [id]);
+    await query('UPDATE posts SET comments_count = comments_count + 1 WHERE id = $1', [id]);
 
     const comment = result.rows[0];
     const userResult = await query(
@@ -272,140 +280,4 @@ router.post('/:id/comments', requireAuth, [
   }
 });
 
-// ============================================================
-// DELETE /:postId/comments/:commentId - Delete a comment
-// ============================================================
-router.delete('/:postId/comments/:commentId', requireAuth, async (req, res) => {
-  try {
-    const { postId, commentId } = req.params;
-    console.log(`🗑️ Deleting comment ${commentId} from post ${postId}`);
-    
-    const commentCheck = await query(
-      'SELECT id, post_id FROM comments WHERE id = $1 AND user_id = $2',
-      [commentId, req.userId]
-    );
-    
-    if (commentCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Comment not found or not authorized' });
-    }
-    
-    await query('DELETE FROM comments WHERE id = $1', [commentId]);
-    await query('UPDATE posts SET comments_count = GREATEST(comments_count - 1, 0) WHERE id = $1', [postId]);
-    
-    console.log(`✅ Comment ${commentId} deleted successfully`);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('❌ Delete comment error:', error);
-    res.status(500).json({ error: 'Failed to delete comment' });
-  }
-});
-
-// ============================================================
-// POST /:id/bookmark - Bookmark a post
-// ============================================================
-router.post('/:id/bookmark', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    console.log(`🔖 Bookmarking post ${id} for user ${req.userId}`);
-    
-    const postCheck = await query('SELECT id FROM posts WHERE id = $1', [id]);
-    if (postCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Post not found' });
-    }
-    
-    await query(
-      'INSERT INTO bookmarks (post_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [id, req.userId]
-    );
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('❌ Bookmark error:', error);
-    res.status(500).json({ error: 'Failed to bookmark post' });
-  }
-});
-
-// ============================================================
-// DELETE /:id/bookmark - Remove bookmark from a post
-// ============================================================
-router.delete('/:id/bookmark', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    console.log(`🔖 Removing bookmark from post ${id} for user ${req.userId}`);
-    
-    await query(
-      'DELETE FROM bookmarks WHERE post_id = $1 AND user_id = $2',
-      [id, req.userId]
-    );
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('❌ Remove bookmark error:', error);
-    res.status(500).json({ error: 'Failed to remove bookmark' });
-  }
-});
-
 module.exports = router;
-
-// ============================================================
-// PUT /:postId/comments/:commentId - Edit a comment
-// ============================================================
-router.put('/:postId/comments/:commentId', requireAuth, [
-  body('text').notEmpty().trim(),
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ error: errors.array()[0].msg });
-    }
-
-    const { postId, commentId } = req.params;
-    const { text } = req.body;
-
-    console.log(`✏️ Editing comment ${commentId} on post ${postId}`);
-
-    // ✅ Check if comment exists and belongs to user
-    const commentCheck = await query(
-      'SELECT id, post_id FROM comments WHERE id = $1 AND user_id = $2',
-      [commentId, req.userId]
-    );
-
-    if (commentCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Comment not found or not authorized' });
-    }
-
-    // ✅ Update the comment
-    const result = await query(
-      `UPDATE comments 
-       SET text = $1, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $2 
-       RETURNING id, post_id, user_id, text, created_at, updated_at, likes_count`,
-      [text.trim(), commentId]
-    );
-
-    const comment = result.rows[0];
-
-    // ✅ Get user info
-    const userResult = await query(
-      'SELECT name, profile_image FROM users WHERE id = $1',
-      [req.userId]
-    );
-    const user = userResult.rows[0] || { name: 'Unknown', profile_image: 'https://randomuser.me/api/portraits/men/1.jpg' };
-
-    console.log(`✅ Comment ${commentId} updated successfully`);
-
-    res.json({
-      id: comment.id,
-      userId: comment.user_id,
-      userName: user.name,
-      userAvatar: user.profile_image,
-      text: comment.text,
-      createdAt: comment.created_at,
-      updatedAt: comment.updated_at,
-      likes: comment.likes_count || 0,
-    });
-  } catch (error) {
-    console.error('❌ Edit comment error:', error);
-    res.status(500).json({ error: 'Failed to edit comment' });
-  }
-});
