@@ -87,7 +87,7 @@ router.post('/purchase', requireAuth, [
     console.log(`✅ Recipient found: ${userCheck.rows[0].name}`);
 
     // ✅ Step 3: Check if recipient has a wallet
-    console.log('📌 Step 3: Checking/wallet...');
+    console.log('📌 Step 3: Checking wallet...');
     const walletCheck = await query('SELECT id FROM wallets WHERE user_id = $1', [recipientId]);
     if (walletCheck.rows.length === 0) {
       console.log(`💰 Creating wallet for recipient: ${recipientId}`);
@@ -101,8 +101,7 @@ router.post('/purchase', requireAuth, [
       `UPDATE wallets 
        SET balance = balance + $1, 
            total_received = total_received + $1,
-           updated_at = CURRENT_TIMESTAMP,
-           version = version + 1
+           updated_at = CURRENT_TIMESTAMP
        WHERE user_id = $2`,
       [giftAmount, recipientId]
     );
