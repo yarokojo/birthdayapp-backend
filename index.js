@@ -258,3 +258,8 @@ app.get('/api/force-setup', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ✅ Upload routes
+const uploadRoutes = require('./src/routes/upload');
+app.use('/api/upload', uploadRoutes);
+console.log('  ✅ /api/upload registered');

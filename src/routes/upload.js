@@ -8,37 +8,14 @@ const router = express.Router();
 
 // Ensure upload directories exist
 const uploadDir = path.join(__dirname, '../../uploads');
-const videoDir = path.join(uploadDir, 'videos');
 const imageDir = path.join(uploadDir, 'images');
+const videoDir = path.join(uploadDir, 'videos');
 
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-if (!fs.existsSync(videoDir)) fs.mkdirSync(videoDir, { recursive: true });
 if (!fs.existsSync(imageDir)) fs.mkdirSync(imageDir, { recursive: true });
+if (!fs.existsSync(videoDir)) fs.mkdirSync(videoDir, { recursive: true });
 
-// Configure multer for video uploads
-const videoStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, videoDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'video-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const videoUpload = multer({
-  storage: videoStorage,
-  limits: { fileSize: 100 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('video/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only video files are allowed'), false);
-    }
-  }
-});
-
-// Configure multer for image uploads
+// Image upload
 const imageStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, imageDir);
@@ -61,45 +38,52 @@ const imageUpload = multer({
   }
 });
 
-// ============================================================
-// POST /video - Upload video
-// ============================================================
-router.post('/video', requireAuth, videoUpload.single('video'), (req, res) => {
-  try {
-    console.log('🎬 Video upload request received');
-    console.log('🎬 req.file:', req.file);
-    
-    if (!req.file) {
-      return res.status(400).json({ error: 'No video file uploaded' });
-    }
-    
-    const videoUrl = `${req.protocol}://${req.get('host')}/uploads/videos/${req.file.filename}`;
-    console.log('🎬 Video uploaded:', videoUrl);
-    res.json({ success: true, videoUrl });
-  } catch (error) {
-    console.error('❌ Video upload error:', error);
-    res.status(500).json({ error: 'Video upload failed' });
-  }
-});
-
-// ============================================================
-// POST /image - Upload image
-// ============================================================
 router.post('/image', requireAuth, imageUpload.single('image'), (req, res) => {
   try {
-    console.log('📸 Image upload request received');
-    console.log('📸 req.file:', req.file);
-    
     if (!req.file) {
       return res.status(400).json({ error: 'No image file uploaded' });
     }
-    
     const imageUrl = `${req.protocol}://${req.get('host')}/uploads/images/${req.file.filename}`;
-    console.log('📸 Image uploaded:', imageUrl);
     res.json({ success: true, imageUrl });
   } catch (error) {
-    console.error('❌ Image upload error:', error);
+    console.error('Image upload error:', error);
     res.status(500).json({ error: 'Image upload failed' });
+  }
+});
+
+// Video upload
+const videoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, videoDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'video-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const videoUpload = multer({
+  storage: videoStorage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files are allowed'), false);
+    }
+  }
+});
+
+router.post('/video', requireAuth, videoUpload.single('video'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No video file uploaded' });
+    }
+    const videoUrl = `${req.protocol}://${req.get('host')}/uploads/videos/${req.file.filename}`;
+    res.json({ success: true, videoUrl });
+  } catch (error) {
+    console.error('Video upload error:', error);
+    res.status(500).json({ error: 'Video upload failed' });
   }
 });
 

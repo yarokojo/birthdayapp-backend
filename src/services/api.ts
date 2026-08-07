@@ -3,7 +3,6 @@ import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 
-// ✅ Use .env for API_URL
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 console.log('🌐 API_URL:', API_URL);
@@ -23,45 +22,16 @@ export const api = axios.create({
 api.interceptors.request.use(
   async (config) => {
     try {
-      let token = await SecureStore.getItemAsync('auth_token');
-      if (!token) {
-        token = await SecureStore.getItemAsync('token');
-      }
-      
-      console.log('🔑 Token exists:', !!token);
-      console.log('🔑 Token length:', token?.length || 0);
-      
+      const token = await SecureStore.getItemAsync('auth_token');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
-        console.log(`✅ Token attached to ${config.url}`);
-      } else {
-        console.log(`⚠️ No token for ${config.url}`);
       }
       return config;
     } catch (error) {
-      console.error('❌ Token error:', error);
       return config;
     }
   },
   (error) => Promise.reject(error)
-);
-
-api.interceptors.response.use(
-  (response) => {
-    console.log(`📥 ${response.status} ${response.config.url}`);
-    return response;
-  },
-  async (error) => {
-    if (error.response) {
-      console.error(`❌ API Error: ${error.response.status} ${error.response.config?.url}`);
-      if (error.response.status === 401) {
-        console.log('🔴 401 - Clearing invalid token');
-        await SecureStore.deleteItemAsync('auth_token');
-        await SecureStore.deleteItemAsync('token');
-      }
-    }
-    return Promise.reject(error);
-  }
 );
 
 // ============================================================
@@ -184,31 +154,29 @@ export const postsApi = {
 };
 
 // ============================================================
-// UPLOAD FUNCTIONS
+// ✅ UPLOAD IMAGE - WORKING VERSION
 // ============================================================
-
-// ✅ Upload Image
 export const uploadImage = async (imageUri: string): Promise<string> => {
-  console.log('📸 uploadImage called with URI:', imageUri);
+  console.log('📸 Uploading image:', imageUri);
   
   try {
+    // ✅ Get file info
+    const fileInfo = await FileSystem.getInfoAsync(imageUri);
+    console.log('📊 File size:', fileInfo.size);
+    
+    // ✅ Create form data
     const formData = new FormData();
-    const filename = imageUri.split('/').pop() || 'image.jpg';
+    const filename = imageUri.split('/').pop() || 'profile.jpg';
     const match = /\.(\w+)$/.exec(filename);
-    const fileType = match ? `image/${match[1]}` : 'image/jpeg';
+    const type = match ? `image/${match[1]}` : 'image/jpeg';
     
-    const fileObject = {
+    formData.append('image', {
       uri: imageUri,
-      type: fileType,
       name: filename,
-    } as any;
+      type: type,
+    } as any);
     
-    formData.append('image', fileObject);
-    
-    console.log('📤 Uploading image...');
-    console.log('📤 File name:', filename);
-    console.log('📤 File type:', fileType);
-    
+    // ✅ Upload
     const response = await api.post('/upload/image', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -216,63 +184,31 @@ export const uploadImage = async (imageUri: string): Promise<string> => {
       timeout: 30000,
     });
     
-    console.log('✅ Image uploaded successfully');
+    console.log('✅ Upload response:', response.data);
     return response.data.imageUrl;
   } catch (error: any) {
-    console.error('❌ Image upload error:', error.response?.data || error.message);
+    console.error('❌ Upload error:', error.response?.data || error.message);
     throw new Error(error.response?.data?.error || 'Failed to upload image');
   }
 };
 
-// ✅ Upload Video
+// ============================================================
+// UPLOAD VIDEO
+// ============================================================
 export const uploadVideo = async (videoUri: string): Promise<string> => {
-  console.log('🎬 uploadVideo called with URI:', videoUri);
+  console.log('🎬 Uploading video:', videoUri);
   
   try {
-    let uploadUri = videoUri;
-    let fileSize = 0;
-    
-    try {
-      const fileInfo = await FileSystem.getInfoAsync(videoUri);
-      fileSize = fileInfo.size || 0;
-      console.log(`📊 Original file size: ${formatFileSize(fileSize)}`);
-    } catch (e) {
-      console.log('⚠️ Could not get file size');
-    }
-    
-    if (fileSize > 10 * 1024 * 1024) {
-      console.log('🔄 Video is large, compressing...');
-      try {
-        const result = await ImageManipulator.manipulateAsync(
-          videoUri,
-          [],
-          {
-            compress: 0.5,
-            format: ImageManipulator.SaveFormat.MP4,
-          }
-        );
-        uploadUri = result.uri;
-        const newInfo = await FileSystem.getInfoAsync(uploadUri);
-        console.log(`✅ Compressed to: ${formatFileSize(newInfo.size || 0)}`);
-      } catch (e) {
-        console.log('⚠️ Could not compress video, using original');
-        uploadUri = videoUri;
-      }
-    }
-    
     const formData = new FormData();
-    const fileName = uploadUri.split('/').pop() || 'video.mp4';
-    const fileType = fileName.split('.').pop() || 'mp4';
+    const filename = videoUri.split('/').pop() || 'video.mp4';
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `video/${match[1]}` : 'video/mp4';
     
-    const fileObject = {
-      uri: uploadUri,
-      type: `video/${fileType}`,
-      name: fileName,
-    } as any;
-    
-    formData.append('video', fileObject);
-    
-    console.log('📤 Uploading video...');
+    formData.append('video', {
+      uri: videoUri,
+      name: filename,
+      type: type,
+    } as any);
     
     const response = await api.post('/upload/video', formData, {
       headers: {
@@ -281,20 +217,11 @@ export const uploadVideo = async (videoUri: string): Promise<string> => {
       timeout: 60000,
     });
     
-    console.log('✅ Video uploaded successfully');
     return response.data.videoUrl;
   } catch (error: any) {
-    console.error('❌ Video upload error:', error.response?.data || error.message);
+    console.error('❌ Video upload error:', error);
     throw new Error(error.response?.data?.error || 'Failed to upload video');
   }
-};
-
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 };
 
 export default api;
