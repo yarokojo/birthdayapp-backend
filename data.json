@@ -1,0 +1,183 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "email": "test@example.com",
+      "password": "$2a$10$80zI0oAX9umwtyyT7UVRluDMJCeqvgkEo7WO/k4A.EzFX2EUesiyG",
+      "name": "Test User",
+      "username": "testuser",
+      "phone": "0244123456",
+      "network": "MTN",
+      "profileImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "birthDate": "1990-06-15"
+    },
+    {
+      "id": 2,
+      "email": "newuser@example.com",
+      "password": "$2a$10$D0uexKlmLpbRru5GKUZhUOMfQLgbzvFcKf9mQKfsd7VSgCKxehZau",
+      "name": "New User",
+      "username": "newuser",
+      "phone": "0501234567",
+      "network": "MTN",
+      "profileImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "birthDate": null
+    },
+    {
+      "id": 3,
+      "email": "sarah@test.com",
+      "name": "Sarah Johnson",
+      "username": "sarahj",
+      "password_hash": "$2a$10$psDUPb/PJWLJVRB3rgtQyONsOA6yO82UCvq951.Zezs3ctweouQj.",
+      "profileImage": "https://randomuser.me/api/portraits/women/3.jpg",
+      "bio": "",
+      "location": "Accra, Ghana",
+      "phone": "0244123456",
+      "network": "MTN",
+      "birthDate": "1995-06-17",
+      "created_at": "2026-08-07T18:37:10.118Z"
+    },
+    {
+      "id": 4,
+      "email": "mike@test.com",
+      "name": "Mike Chen",
+      "username": "mikec",
+      "password_hash": "$2a$10$d/jSxs9hZBPHvXK8zZsnJ.WbIhX9DiOxMa/o2T0XVIeZeV6WRAEQu",
+      "profileImage": "https://randomuser.me/api/portraits/men/4.jpg",
+      "bio": "",
+      "location": "Accra, Ghana",
+      "phone": "0559876543",
+      "network": "MTN",
+      "birthDate": "1995-06-17",
+      "created_at": "2026-08-07T18:37:10.259Z"
+    },
+    {
+      "id": 5,
+      "email": "emma@test.com",
+      "name": "Emma Davis",
+      "username": "emmad",
+      "password_hash": "$2a$10$.ZIibnvpWDHt4D0LopH/IuwwnxVXyG3VueOs67bOkpOYh7pxCbv5S",
+      "profileImage": "https://randomuser.me/api/portraits/women/5.jpg",
+      "bio": "",
+      "location": "Accra, Ghana",
+      "phone": "0201234567",
+      "network": "Telecel",
+      "birthDate": "1995-06-17",
+      "created_at": "2026-08-07T18:37:10.386Z"
+    }
+  ],
+  "posts": [],
+  "postLikes": [],
+  "bookmarks": [],
+  "notifications": [],
+  "wallets": {
+    "1": {
+      "balance": 100,
+      "transactions": []
+    },
+    "2": {
+      "balance": 0,
+      "transactions": []
+    },
+    "843dba64-06d2-45e2-8c4a-95a3921f8a82": {
+      "balance": 0,
+      "transactions": [],
+      "totalReceived": 0,
+      "totalSent": 0,
+      "totalWithdrawn": 0,
+      "totalFeesPaid": 0
+    }
+  },
+  "banners": [
+    {
+      "id": "banner_1",
+      "title": "🎉 Welcome to BirthdayApp!",
+      "subtitle": "Celebrate every moment",
+      "icon": "🎂",
+      "colors": [
+        "#6366f1",
+        "#8b5cf6",
+        "#a855f7"
+      ],
+      "active": true,
+      "views": 3
+    }
+  ],
+  "stories": [],
+  "seenStories": [],
+  "friendships": [
+    {
+      "id": "1786127830388_2",
+      "userId": 1,
+      "friendId": 2,
+      "createdAt": "2026-08-07T18:37:10.388Z"
+    },
+    {
+      "id": "1786127830389_2",
+      "userId": 2,
+      "friendId": 1,
+      "createdAt": "2026-08-07T18:37:10.388Z"
+    },
+    {
+      "id": "1786127830389_3",
+      "userId": 1,
+      "friendId": 3,
+      "createdAt": "2026-08-07T18:37:10.389Z"
+    },
+    {
+      "id": "1786127830390_3",
+      "userId": 3,
+      "friendId": 1,
+      "createdAt": "2026-08-07T18:37:10.389Z"
+    },
+    {
+      "id": "1786127830389_4",
+      "userId": 1,
+      "friendId": 4,
+      "createdAt": "2026-08-07T18:37:10.389Z"
+    },
+    {
+      "id": "1786127830390_4",
+      "userId": 4,
+      "friendId": 1,
+      "createdAt": "2026-08-07T18:37:10.389Z"
+    },
+    {
+      "id": "1786127830389_5",
+      "userId": 1,
+      "friendId": 5,
+      "createdAt": "2026-08-07T18:37:10.389Z"
+    },
+    {
+      "id": "1786127830391_5",
+      "userId": 5,
+      "friendId": 1,
+      "createdAt": "2026-08-07T18:37:10.390Z"
+    }
+  ],
+  "friendRequests": [],
+  "follows": [],
+  "userSettings": {
+    "1": {
+      "theme": {
+        "darkMode": false,
+        "primaryColor": "#6366f1"
+      }
+    },
+    "2": {
+      "theme": {
+        "darkMode": false,
+        "primaryColor": "#6366f1"
+      }
+    }
+  },
+  "giftTransactions": [],
+  "companyFees": [],
+  "companyAccount": {
+    "name": "MeolCompany",
+    "accountNumber": "0596270302",
+    "network": "MTN",
+    "totalFees": 0
+  },
+  "blockedUsers": {},
+  "liveStreams": []
+}
