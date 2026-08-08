@@ -29,15 +29,19 @@ pool.on('error', (err) => {
   console.error('❌ PostgreSQL error:', err.message);
 });
 
-// ✅ SIMPLE query function - no retry wrapper
+// ✅ FIXED: query function with proper parameter handling
 const query = async (text, params) => {
   try {
-    console.log('📝 SQL:', text.substring(0, 80) + (text.length > 80 ? '...' : ''));
-    const result = await pool.query(text, params);
+    // ✅ Ensure params is an array
+    const safeParams = Array.isArray(params) ? params : [];
+    console.log('📝 SQL:', text);
+    console.log('📝 Params:', safeParams);
+    const result = await pool.query(text, safeParams);
     return result;
   } catch (error) {
     console.error('❌ SQL Error:', error.message);
     console.error('📝 SQL:', text);
+    console.error('📝 Params:', params);
     throw error;
   }
 };
