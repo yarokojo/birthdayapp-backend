@@ -2,23 +2,22 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 const dbUrl = process.env.DATABASE_URL || '';
-console.log('📦 DATABASE_URL exists:', !!dbUrl);
-console.log('📦 DATABASE_URL length:', dbUrl.length);
-if (dbUrl) {
-  console.log('📦 DATABASE_URL prefix:', dbUrl.substring(0, 30) + '...');
-} else {
-  console.log('❌ DATABASE_URL is missing!');
+
+if (!dbUrl) {
+  console.error('❌ DATABASE_URL is missing!');
+  process.exit(1);
 }
 
-const isCloudDb = dbUrl.includes('neon.tech') || dbUrl.includes('render.com');
+console.log('📦 DATABASE_URL exists: true');
+console.log('📦 DATABASE_URL length:', dbUrl.length);
 
+// Create pool
 const pool = new Pool({
   connectionString: dbUrl,
-  ssl: isCloudDb ? { rejectUnauthorized: false } : false,
-  max: 20,
-  idleTimeoutMillis: 60000,
-  connectionTimeoutMillis: 60000,
-  keepAlive: true,
+  ssl: { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 30000,
 });
 
 pool.on('connect', () => {
@@ -29,21 +28,9 @@ pool.on('error', (err) => {
   console.error('❌ PostgreSQL error:', err.message);
 });
 
-// ✅ FIXED: query function with proper parameter handling
-const query = async (text, params) => {
-  try {
-    // ✅ Ensure params is an array
-    const safeParams = Array.isArray(params) ? params : [];
-    console.log('📝 SQL:', text);
-    console.log('📝 Params:', safeParams);
-    const result = await pool.query(text, safeParams);
-    return result;
-  } catch (error) {
-    console.error('❌ SQL Error:', error.message);
-    console.error('📝 SQL:', text);
-    console.error('📝 Params:', params);
-    throw error;
-  }
+// ✅ DIRECT QUERY FUNCTION - NO MODIFICATIONS
+const query = (text, params) => {
+  return pool.query(text, params);
 };
 
 module.exports = {
