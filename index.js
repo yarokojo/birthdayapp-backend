@@ -36,6 +36,7 @@ app.use("/api/upload", require("./src/routes/upload"));
 app.use("/api/settings", require("./src/routes/settings"));
 app.use("/api/leaderboard", require("./src/routes/leaderboard"));
 app.use("/api/admin", require("./src/routes/admin"));
+app.use("/api/ads", require("./src/routes/ads"));
 
 console.log("✅ All API routes mounted");
 
