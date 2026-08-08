@@ -16,9 +16,9 @@ const pool = new Pool({
   connectionString: dbUrl,
   ssl: isCloudDb ? { rejectUnauthorized: false } : false,
   max: 20,
-  idleTimeoutMillis: 60000,        // ✅ Increased to 60s
-  connectionTimeoutMillis: 60000,   // ✅ Increased to 60s
-  keepAlive: true,                  // ✅ Keep connections alive
+  idleTimeoutMillis: 60000,
+  connectionTimeoutMillis: 60000,
+  keepAlive: true,
 });
 
 pool.on('connect', () => {
@@ -29,25 +29,20 @@ pool.on('error', (err) => {
   console.error('❌ PostgreSQL error:', err.message);
 });
 
-// ✅ Add retry logic for queries
-const queryWithRetry = async (text, params, retries = 3) => {
-  let lastError;
-  for (let i = 0; i < retries; i++) {
-    try {
-      const result = await pool.query(text, params);
-      return result;
-    } catch (error) {
-      lastError = error;
-      console.log(`⚠️ Query failed (attempt ${i + 1}/${retries}):`, error.message);
-      if (i < retries - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-      }
-    }
+// ✅ SIMPLE query function - no retry wrapper
+const query = async (text, params) => {
+  try {
+    console.log('📝 SQL:', text.substring(0, 80) + (text.length > 80 ? '...' : ''));
+    const result = await pool.query(text, params);
+    return result;
+  } catch (error) {
+    console.error('❌ SQL Error:', error.message);
+    console.error('📝 SQL:', text);
+    throw error;
   }
-  throw lastError;
 };
 
 module.exports = {
-  query: queryWithRetry,
+  query,
   pool,
 };
