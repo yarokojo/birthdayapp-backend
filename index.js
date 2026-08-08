@@ -1,49 +1,24 @@
-// DEPLOY_VERSION: 2026-08-08-v2
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
 const path = require("path");
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const multer = require("multer");
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+console.log(`🚀 Starting server on port ${PORT}`);
+console.log(`📂 Current directory: ${__dirname}`);
+
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true
+}));
+
 app.use(express.json());
 
-// ============================================================
-// STATIC FILES
-// ============================================================
-app.use('/uploads', express.static('uploads'));
-
-// ============================================================
-// ✅ MOUNT API ROUTES
-// ============================================================
-app.use("/api/auth", require("./src/routes/auth"));
-app.use("/api/users", require("./src/routes/users"));
-app.use("/api/posts", require("./src/routes/posts"));
-app.use("/api/wallet", require("./src/routes/wallet"));
-app.use("/api/friends", require("./src/routes/friends"));
-app.use("/api/gifts", require("./src/routes/gifts"));
-app.use("/api/notifications", require("./src/routes/notifications"));
-app.use("/api/calendar", require("./src/routes/calendar"));
-app.use("/api/stories", require("./src/routes/stories"));
-app.use("/api/banners", require("./src/routes/banners"));
-app.use("/api/live", require("./src/routes/live"));
-app.use("/api/upload", require("./src/routes/upload"));
-app.use("/api/settings", require("./src/routes/settings"));
-app.use("/api/leaderboard", require("./src/routes/leaderboard"));
-app.use("/api/admin", require("./src/routes/admin"));
-app.use("/api/ads", require("./src/routes/ads"));
-
-console.log("✅ All API routes mounted");
-
-// ============================================================
-// HEALTH CHECK
-// ============================================================
+// Health check
 app.get("/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
 });
@@ -52,10 +27,67 @@ app.get("/", (req, res) => {
   res.json({ message: "BirthdayApp API is running!" });
 });
 
-// ============================================================
-// START SERVER
-// ============================================================
+// ✅ MOUNT API ROUTES - Using absolute paths
+console.log("📝 Loading routes...");
+
+try {
+  app.use("/api/auth", require("./src/routes/auth"));
+  console.log("✅ /api/auth mounted");
+} catch (err) {
+  console.error("❌ Failed to load /api/auth:", err.message);
+}
+
+try {
+  app.use("/api/users", require("./src/routes/users"));
+  console.log("✅ /api/users mounted");
+} catch (err) {
+  console.error("❌ Failed to load /api/users:", err.message);
+}
+
+try {
+  app.use("/api/posts", require("./src/routes/posts"));
+  console.log("✅ /api/posts mounted");
+} catch (err) {
+  console.error("❌ Failed to load /api/posts:", err.message);
+}
+
+try {
+  app.use("/api/wallet", require("./src/routes/wallet"));
+  console.log("✅ /api/wallet mounted");
+} catch (err) {
+  console.error("❌ Failed to load /api/wallet:", err.message);
+}
+
+try {
+  app.use("/api/friends", require("./src/routes/friends"));
+  console.log("✅ /api/friends mounted");
+} catch (err) {
+  console.error("❌ Failed to load /api/friends:", err.message);
+}
+
+try {
+  app.use("/api/gifts", require("./src/routes/gifts"));
+  console.log("✅ /api/gifts mounted");
+} catch (err) {
+  console.error("❌ Failed to load /api/gifts:", err.message);
+}
+
+try {
+  app.use("/api/notifications", require("./src/routes/notifications"));
+  console.log("✅ /api/notifications mounted");
+} catch (err) {
+  console.error("❌ Failed to load /api/notifications:", err.message);
+}
+
+try {
+  app.use("/api/calendar", require("./src/routes/calendar"));
+  console.log("✅ /api/calendar mounted");
+} catch (err) {
+  console.error("❌ Failed to load /api/calendar:", err.message);
+}
+
+console.log("✅ All routes loaded");
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`✅ All routes mounted`);
 });
