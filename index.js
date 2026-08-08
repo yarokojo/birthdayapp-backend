@@ -7,7 +7,10 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 console.log(`🚀 Starting server on port ${PORT}`);
-console.log(`📂 Current directory: ${__dirname}`);
+
+// ✅ Run migrations on startup
+const { runMigrations } = require('./src/config/runMigrations');
+runMigrations();
 
 app.use(cors({
   origin: '*',
@@ -27,7 +30,7 @@ app.get("/", (req, res) => {
   res.json({ message: "BirthdayApp API is running!" });
 });
 
-// ✅ MOUNT API ROUTES - Using absolute paths
+// ✅ MOUNT API ROUTES
 console.log("📝 Loading routes...");
 
 try {
