@@ -511,21 +511,63 @@ app.post('/api/wallet/add-gift', verifyToken, (req, res) => {
 // ============================================================
 // ✅ POSTS ENDPOINTS
 // ============================================================
+
+// GET /api/posts - Get all posts
 app.get('/api/posts', (req, res) => {
   const allPosts = data.posts || [];
   const enrichedPosts = allPosts.map(post => {
     const author = data.users.find(u => u.id === post.userId);
-    return { ...post, phone: author?.phone || '', network: author?.network || 'MTN' };
+    return { 
+      ...post, 
+      phone: author?.phone || '', 
+      network: author?.network || 'MTN',
+      // ✅ Ensure song data is preserved
+      birthdaySongId: post.birthdaySongId || null,
+      birthdaySongUrl: post.birthdaySongUrl || null,
+      birthdaySongName: post.birthdaySongName || null,
+    };
   });
+  
+  // ✅ Log posts with songs for debugging
+  const songs = enrichedPosts.filter(p => p.birthdaySongUrl && p.birthdaySongUrl !== '');
+  if (songs.length > 0) {
+    console.log(`🎵 Returning ${songs.length} posts with birthday songs`);
+    songs.forEach(p => {
+      console.log(`  🎵 ${p.id}: ${p.birthdaySongName} -> ${p.birthdaySongUrl?.substring(0, 50)}...`);
+    });
+  }
+  
   res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 });
 
+// POST /api/posts - Create a new post
 app.post('/api/posts', verifyToken, (req, res) => {
-  const { content, image, video, location, celebrationType, celebrantName, isBirthday, music, hashtags } = req.body;
+  const { 
+    content, 
+    image, 
+    video, 
+    location, 
+    celebrationType, 
+    celebrantName, 
+    isBirthday, 
+    music, 
+    hashtags,
+    birthdaySongId,
+    birthdaySongUrl,
+    birthdaySongName
+  } = req.body;
+  
   const user = data.users.find(u => u.id === req.userId);
   if (!user) {
     return res.status(404).json({ error: 'User not found' });
   }
+  
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
   
   const newPost = {
     id: Date.now().toString(),
@@ -549,8 +591,18 @@ app.post('/api/posts', verifyToken, (req, res) => {
     reposts: 0,
     views: 0,
     createdAt: new Date().toISOString(),
-    commentList: []
+    commentList: [],
+    // ✅ CRITICAL: Store birthday song data
+    birthdaySongId: birthdaySongId || null,
+    birthdaySongUrl: birthdaySongUrl || null,
+    birthdaySongName: birthdaySongName || null,
   };
+  
+  console.log('📝 Post saved with song:', {
+    id: newPost.id,
+    birthdaySongUrl: newPost.birthdaySongUrl ? newPost.birthdaySongUrl.substring(0, 50) + '...' : null,
+    birthdaySongName: newPost.birthdaySongName,
+  });
   
   if (!data.posts) data.posts = [];
   data.posts.unshift(newPost);
@@ -558,6 +610,7 @@ app.post('/api/posts', verifyToken, (req, res) => {
   res.status(201).json(newPost);
 });
 
+// DELETE /api/posts/:id - Delete a post
 app.delete('/api/posts/:id', verifyToken, (req, res) => {
   const { id } = req.params;
   const post = (data.posts || []).find(p => p.id === id);
@@ -1410,39 +1463,11 @@ app.post('/api/live/streams/:id/view', (req, res) => {
 // ============================================================
 app.get('/api/friends/birthdays', verifyToken, (req, res) => {
   const userId = req.userId;
-  const friendships = data.friendships.filter(f => f.userId === userId);
-  const friends = friendships.map(f => {
-    const friend = data.users.find(u => u.id === f.friendId);
-    return friend;
-  }).filter(Boolean);
-  
-  const friendsBirthdays = friends.map(f => ({
-    id: f.id,
-    name: f.name,
-    username: f.username,
-    avatar: f.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    birthDate: f.birthDate,
-    phone: f.phone || '',
-    network: f.network || 'MTN'
-  }));
-  
-  res.json({ friendsBirthdays });
-});
-
-console.log('✅ ALL endpoints added successfully!');
-
-// ============================================================
-// ✅ FRIENDS BIRTHDAYS ENDPOINT
-// ============================================================
-app.get('/api/friends/birthdays', verifyToken, (req, res) => {
-  const userId = req.userId;
   console.log(`🎂 Getting friends birthdays for user: ${userId}`);
   
-  // Get all friendships for this user
   const friendships = data.friendships.filter(f => f.userId === userId);
   console.log(`👥 Found ${friendships.length} friendships`);
   
-  // Get friend details
   const friends = friendships
     .map(f => {
       const friend = data.users.find(u => u.id === f.friendId);
@@ -1452,7 +1477,6 @@ app.get('/api/friends/birthdays', verifyToken, (req, res) => {
   
   console.log(`👤 Found ${friends.length} friends`);
   
-  // Format friends with birthday info
   const friendsBirthdays = friends.map(f => ({
     id: f.id,
     name: f.name,
