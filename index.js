@@ -1101,3 +1101,477 @@ app.delete('/api/stories/:id', verifyToken, (req, res) => {
 });
 
 console.log('✅ Stories endpoints added');
+
+// ============================================================
+// ✅ CALENDAR EVENTS ENDPOINTS
+// ============================================================
+app.get('/api/calendar/events/me', verifyToken, (req, res) => {
+  const userId = req.userId;
+  if (!data.calendarEvents) data.calendarEvents = {};
+  if (!data.calendarEvents[userId]) data.calendarEvents[userId] = [];
+  res.json({ success: true, events: data.calendarEvents[userId] });
+});
+
+app.post('/api/calendar/events', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { title, date, type, celebrantName, celebrantId, reminderSet } = req.body;
+  if (!title || !date) {
+    return res.status(400).json({ error: 'Title and date are required' });
+  }
+  if (!data.calendarEvents) data.calendarEvents = {};
+  if (!data.calendarEvents[userId]) data.calendarEvents[userId] = [];
+  
+  const newEvent = {
+    id: Date.now().toString(),
+    title,
+    date,
+    type: type || 'birthday',
+    celebrantName: celebrantName || '',
+    celebrantId: celebrantId || '',
+    reminderSet: reminderSet || false,
+    createdAt: new Date().toISOString()
+  };
+  
+  data.calendarEvents[userId].push(newEvent);
+  saveData();
+  res.status(201).json({ success: true, events: data.calendarEvents[userId] });
+});
+
+app.put('/api/calendar/events/:id', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { id } = req.params;
+  const { title, date, type, celebrantName, celebrantId, reminderSet } = req.body;
+  
+  if (!data.calendarEvents) data.calendarEvents = {};
+  if (!data.calendarEvents[userId]) data.calendarEvents[userId] = [];
+  
+  const index = data.calendarEvents[userId].findIndex(e => e.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+  
+  data.calendarEvents[userId][index] = {
+    ...data.calendarEvents[userId][index],
+    title: title || data.calendarEvents[userId][index].title,
+    date: date || data.calendarEvents[userId][index].date,
+    type: type || data.calendarEvents[userId][index].type,
+    celebrantName: celebrantName !== undefined ? celebrantName : data.calendarEvents[userId][index].celebrantName,
+    celebrantId: celebrantId !== undefined ? celebrantId : data.calendarEvents[userId][index].celebrantId,
+    reminderSet: reminderSet !== undefined ? reminderSet : data.calendarEvents[userId][index].reminderSet,
+  };
+  saveData();
+  res.json({ success: true, events: data.calendarEvents[userId] });
+});
+
+app.delete('/api/calendar/events/:id', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { id } = req.params;
+  
+  if (!data.calendarEvents) data.calendarEvents = {};
+  if (!data.calendarEvents[userId]) data.calendarEvents[userId] = [];
+  
+  const index = data.calendarEvents[userId].findIndex(e => e.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+  
+  data.calendarEvents[userId].splice(index, 1);
+  saveData();
+  res.json({ success: true, events: data.calendarEvents[userId] });
+});
+
+app.put('/api/calendar/events/:id/reminder', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { id } = req.params;
+  
+  if (!data.calendarEvents) data.calendarEvents = {};
+  if (!data.calendarEvents[userId]) data.calendarEvents[userId] = [];
+  
+  const index = data.calendarEvents[userId].findIndex(e => e.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+  
+  data.calendarEvents[userId][index].reminderSet = !data.calendarEvents[userId][index].reminderSet;
+  saveData();
+  res.json({ success: true, events: data.calendarEvents[userId] });
+});
+
+// ============================================================
+// ✅ BLOCKED USERS ENDPOINTS
+// ============================================================
+app.get('/api/user/blocked/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.blockedUsers) data.blockedUsers = {};
+  if (!data.blockedUsers[userId]) data.blockedUsers[userId] = [];
+  const blockedUserIds = data.blockedUsers[userId] || [];
+  const blockedUsers = data.users.filter(u => blockedUserIds.includes(u.id)).map(u => ({
+    id: u.id, name: u.name, username: u.username, profileImage: u.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    reason: 'Blocked by user', blockedAt: new Date().toISOString()
+  }));
+  res.json({ blockedUsers });
+});
+
+app.post('/api/user/block/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { blockUserId } = req.body;
+  if (!data.blockedUsers) data.blockedUsers = {};
+  if (!data.blockedUsers[userId]) data.blockedUsers[userId] = [];
+  if (!data.blockedUsers[userId].includes(blockUserId)) {
+    data.blockedUsers[userId].push(blockUserId);
+    saveData();
+  }
+  res.json({ success: true, blockedUsers: data.blockedUsers[userId] });
+});
+
+app.delete('/api/user/unblock/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { blockUserId } = req.body;
+  if (data.blockedUsers && data.blockedUsers[userId]) {
+    data.blockedUsers[userId] = data.blockedUsers[userId].filter(id => id !== blockUserId);
+    saveData();
+  }
+  res.json({ success: true, blockedUsers: data.blockedUsers[userId] || [] });
+});
+
+// ============================================================
+// ✅ USER SETTINGS ENDPOINTS
+// ============================================================
+app.get('/api/user/settings/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.userSettings) data.userSettings = {};
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+    saveData();
+  }
+  res.json(data.userSettings[userId]);
+});
+
+app.put('/api/user/settings/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { theme, privacy, notifications } = req.body;
+  if (!data.userSettings) data.userSettings = {};
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+  }
+  if (theme) data.userSettings[userId].theme = { ...data.userSettings[userId].theme, ...theme };
+  if (privacy) data.userSettings[userId].privacy = { ...data.userSettings[userId].privacy, ...privacy };
+  if (notifications) data.userSettings[userId].notifications = { ...data.userSettings[userId].notifications, ...notifications };
+  saveData();
+  res.json({ success: true, settings: data.userSettings[userId] });
+});
+
+app.get('/api/user/settings/:userId/theme', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.userSettings || !data.userSettings[userId]) {
+    return res.json({ darkMode: false, primaryColor: '#6366f1' });
+  }
+  res.json(data.userSettings[userId].theme || { darkMode: false, primaryColor: '#6366f1' });
+});
+
+app.put('/api/user/settings/:userId/theme', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { darkMode, primaryColor } = req.body;
+  if (!data.userSettings) data.userSettings = {};
+  if (!data.userSettings[userId]) {
+    data.userSettings[userId] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+  }
+  if (darkMode !== undefined) data.userSettings[userId].theme.darkMode = darkMode;
+  if (primaryColor) data.userSettings[userId].theme.primaryColor = primaryColor;
+  saveData();
+  res.json({ success: true, theme: data.userSettings[userId].theme });
+});
+
+// ============================================================
+// ✅ GROUP GIFTS ENDPOINTS
+// ============================================================
+app.get('/api/group-gifts', (req, res) => {
+  res.json(data.groupGifts || []);
+});
+
+app.post('/api/group-gifts', verifyToken, (req, res) => {
+  const { giftName, celebrantName, targetAmount, deadline, imageUrl } = req.body;
+  const newGroupGift = {
+    id: Date.now().toString(),
+    giftName,
+    celebrantName,
+    celebrantId: `celebrant_${Date.now()}`,
+    targetAmount: parseFloat(targetAmount),
+    currentAmount: 0,
+    contributorsCount: 0,
+    deadline: deadline || "No deadline",
+    imageUrl: imageUrl || "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=300&fit=crop",
+    status: 'active',
+    contributors: [],
+    createdAt: new Date().toISOString()
+  };
+  if (!data.groupGifts) data.groupGifts = [];
+  data.groupGifts.unshift(newGroupGift);
+  saveData();
+  res.status(201).json(newGroupGift);
+});
+
+app.post('/api/group-gifts/:id/contribute', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const { amount, userName } = req.body;
+  const gift = data.groupGifts.find(g => g.id === id);
+  if (!gift) return res.status(404).json({ error: "Group gift not found" });
+  if (gift.status !== 'active') return res.status(400).json({ error: "Group gift not active" });
+  
+  const contributionAmount = parseFloat(amount);
+  const newTotal = gift.currentAmount + contributionAmount;
+  if (newTotal > gift.targetAmount) return res.status(400).json({ error: "Contribution exceeds target" });
+  
+  gift.contributors.push({ userId: req.userId, userName: userName || "Anonymous", amount: contributionAmount, date: new Date().toISOString() });
+  gift.contributorsCount += 1;
+  gift.currentAmount = newTotal;
+  if (gift.currentAmount >= gift.targetAmount) {
+    gift.status = 'completed';
+    gift.completedAt = new Date().toISOString();
+  }
+  saveData();
+  res.json({ success: true, isComplete: gift.status === 'completed', currentAmount: gift.currentAmount, targetAmount: gift.targetAmount });
+});
+
+// ============================================================
+// ✅ LIVE STREAMS ENDPOINTS
+// ============================================================
+app.get('/api/live/streams', (req, res) => {
+  const liveStreams = data.liveStreams || [];
+  const activeStreams = liveStreams.filter(s => s.isLive === true);
+  res.json({ success: true, streams: activeStreams });
+});
+
+app.post('/api/live/streams', verifyToken, (req, res) => {
+  const { title, privacy } = req.body;
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const newStream = {
+    id: Date.now().toString(),
+    userId: user.id,
+    userName: user.name,
+    userHandle: user.username,
+    userAvatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    title: title || `${user.name}'s Live Stream`,
+    thumbnail: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&h=300&fit=crop',
+    viewerCount: 0,
+    startedAt: new Date().toISOString(),
+    isLive: true,
+    streamUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    category: 'General',
+    privacy: privacy || 'everyone',
+    isBirthday: false,
+    celebrantName: user.name,
+  };
+
+  if (!data.liveStreams) data.liveStreams = [];
+  data.liveStreams.push(newStream);
+  saveData();
+  res.status(201).json({ success: true, stream: newStream });
+});
+
+app.put('/api/live/streams/:id/end', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const stream = (data.liveStreams || []).find(s => s.id === id);
+  if (!stream) return res.status(404).json({ error: 'Stream not found' });
+  if (stream.userId !== req.userId) return res.status(403).json({ error: 'Not your stream' });
+  
+  stream.isLive = false;
+  stream.endedAt = new Date().toISOString();
+  saveData();
+  res.json({ success: true });
+});
+
+app.post('/api/live/streams/:id/view', (req, res) => {
+  const { id } = req.params;
+  const stream = (data.liveStreams || []).find(s => s.id === id);
+  if (!stream) return res.status(404).json({ error: 'Stream not found' });
+  
+  stream.viewerCount = (stream.viewerCount || 0) + 1;
+  saveData();
+  res.json({ success: true, viewerCount: stream.viewerCount });
+});
+
+// ============================================================
+// ✅ FRIENDS BIRTHDAYS ENDPOINT
+// ============================================================
+app.get('/api/friends/birthdays', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const friendships = data.friendships.filter(f => f.userId === userId);
+  const friends = friendships.map(f => {
+    const friend = data.users.find(u => u.id === f.friendId);
+    return friend;
+  }).filter(Boolean);
+  
+  const friendsBirthdays = friends.map(f => ({
+    id: f.id,
+    name: f.name,
+    username: f.username,
+    avatar: f.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    birthDate: f.birthDate,
+    phone: f.phone || '',
+    network: f.network || 'MTN'
+  }));
+  
+  res.json({ friendsBirthdays });
+});
+
+console.log('✅ ALL endpoints added successfully!');
+
+// ============================================================
+// ✅ FRIENDS BIRTHDAYS ENDPOINT
+// ============================================================
+app.get('/api/friends/birthdays', verifyToken, (req, res) => {
+  const userId = req.userId;
+  console.log(`🎂 Getting friends birthdays for user: ${userId}`);
+  
+  // Get all friendships for this user
+  const friendships = data.friendships.filter(f => f.userId === userId);
+  console.log(`👥 Found ${friendships.length} friendships`);
+  
+  // Get friend details
+  const friends = friendships
+    .map(f => {
+      const friend = data.users.find(u => u.id === f.friendId);
+      return friend;
+    })
+    .filter(Boolean);
+  
+  console.log(`👤 Found ${friends.length} friends`);
+  
+  // Format friends with birthday info
+  const friendsBirthdays = friends.map(f => ({
+    id: f.id,
+    name: f.name,
+    username: f.username,
+    avatar: f.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    birthDate: f.birthDate,
+    phone: f.phone || '',
+    network: f.network || 'MTN'
+  }));
+  
+  console.log(`✅ Returning ${friendsBirthdays.length} friends birthdays`);
+  res.json({ friendsBirthdays });
+});
+
+// ============================================================
+// ✅ ADMIN STATS ENDPOINT (for analytics)
+// ============================================================
+app.get('/api/admin/stats', (req, res) => {
+  res.json({
+    userCount: data.users.length,
+    postCount: data.posts.length,
+    giftCount: data.giftTransactions.length,
+    wishCount: data.notifications.filter(n => n.type === 'wish').length,
+    activeUsers: data.users.filter(u => {
+      const recent = new Date();
+      recent.setDate(recent.getDate() - 7);
+      return new Date(u.created_at) > recent;
+    }).length,
+    newUsersToday: data.users.filter(u => {
+      const today = new Date().toDateString();
+      return new Date(u.created_at).toDateString() === today;
+    }).length,
+    totalRevenue: data.companyAccount.totalFees || 0,
+    totalFees: data.companyFees.reduce((sum, f) => sum + f.amount, 0) || 0
+  });
+});
+
+// ============================================================
+// ✅ USER ACTIVITY ENDPOINT
+// ============================================================
+app.get('/api/user/activity/:userId', verifyToken, (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const userPosts = data.posts.filter(p => p.userId === userId);
+  const userGifts = data.giftTransactions.filter(g => g.recipientId === userId || g.buyerId === userId);
+  const userNotifications = data.notifications.filter(n => n.userId === userId);
+  
+  res.json({
+    userId,
+    posts: userPosts.length,
+    gifts: userGifts.length,
+    notifications: userNotifications.length,
+    lastActive: userNotifications[0]?.createdAt || new Date().toISOString()
+  });
+});
+
+// ============================================================
+// ✅ VIDEO POSITIONS ENDPOINTS
+// ============================================================
+app.post('/api/video/position', verifyToken, (req, res) => {
+  const { postId, position } = req.body;
+  const userId = req.userId;
+  
+  if (!data.videoPositions) data.videoPositions = [];
+  const existing = data.videoPositions.find(v => v.userId === userId && v.postId === postId);
+  if (existing) {
+    existing.position = position;
+    existing.updatedAt = new Date().toISOString();
+  } else {
+    data.videoPositions.push({ userId, postId, position, updatedAt: new Date().toISOString() });
+  }
+  saveData();
+  res.json({ success: true });
+});
+
+app.get('/api/video/position/:postId', verifyToken, (req, res) => {
+  const { postId } = req.params;
+  const userId = req.userId;
+  
+  if (!data.videoPositions) data.videoPositions = [];
+  const existing = data.videoPositions.find(v => v.userId === userId && v.postId === postId);
+  res.json({ position: existing?.position || 0 });
+});
+
+// ============================================================
+// ✅ REMINDERS ENDPOINTS
+// ============================================================
+app.get('/api/reminders', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const reminders = data.reminders ? data.reminders.filter(r => r.userId === userId) : [];
+  res.json({ reminders });
+});
+
+app.post('/api/reminders', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { title, date, type } = req.body;
+  
+  const newReminder = {
+    id: Date.now().toString(),
+    userId,
+    title,
+    date,
+    type: type || 'birthday',
+    createdAt: new Date().toISOString()
+  };
+  
+  if (!data.reminders) data.reminders = [];
+  data.reminders.push(newReminder);
+  saveData();
+  res.status(201).json({ success: true, reminder: newReminder });
+});
+
+app.delete('/api/reminders/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  
+  if (!data.reminders) data.reminders = [];
+  data.reminders = data.reminders.filter(r => r.id !== id || r.userId !== userId);
+  saveData();
+  res.json({ success: true });
+});
+
+console.log('✅ ALL remaining endpoints added!');
