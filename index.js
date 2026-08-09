@@ -1758,3 +1758,28 @@ app.post('/api/auth/verify-reset-token', (req, res) => {
 });
 
 console.log('✅ Password reset endpoints added');
+
+// ============================================================
+// ✅ GET ALL USERS ENDPOINT
+// ============================================================
+app.get('/api/users', (req, res) => {
+  console.log('👥 Getting all users...');
+  
+  // ✅ Return all users (excluding sensitive data)
+  const allUsers = data.users.map(user => ({
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    bio: user.bio || '',
+    location: user.location || '',
+    phone: user.phone || '',
+    network: user.network || 'MTN',
+    birthDate: user.birthDate || null,
+    createdAt: user.created_at
+  }));
+  
+  console.log(`✅ Returning ${allUsers.length} users`);
+  res.json(allUsers);
+});
