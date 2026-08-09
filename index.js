@@ -1783,3 +1783,59 @@ app.get('/api/users', (req, res) => {
   console.log(`✅ Returning ${allUsers.length} users`);
   res.json(allUsers);
 });
+
+// ============================================================
+// ✅ LEADERBOARD ENDPOINT
+// ============================================================
+app.get('/api/leaderboard', (req, res) => {
+  console.log('🏆 Getting leaderboard...');
+  
+  const timeframe = req.query.timeframe || 'week';
+  console.log(`📊 Timeframe: ${timeframe}`);
+  
+  // ✅ Calculate scores based on user activity
+  const leaderboard = data.users.map(user => {
+    // Count posts by this user
+    const userPosts = data.posts.filter(p => p.userId === user.id);
+    const postCount = userPosts.length;
+    
+    // Count gifts received
+    const giftsReceived = data.giftTransactions.filter(g => g.recipientId === user.id);
+    const giftCount = giftsReceived.length;
+    const giftTotal = giftsReceived.reduce((sum, g) => sum + (g.amount || 0), 0);
+    
+    // Count wishes received
+    const wishesReceived = data.notifications.filter(n => 
+      n.userId === user.id && n.type === 'wish'
+    ).length;
+    
+    // Count likes received
+    let likesReceived = 0;
+    userPosts.forEach(post => {
+      likesReceived += (post.likes || 0);
+    });
+    
+    // ✅ Calculate score: posts(5) + gifts(10) + wishes(3) + likes(1)
+    const score = (postCount * 5) + (giftCount * 10) + (wishesReceived * 3) + (likesReceived * 1);
+    
+    return {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      score: score,
+      wishesSent: data.notifications.filter(n => n.userId === user.id && n.type === 'wish').length,
+      giftsSent: data.giftTransactions.filter(g => g.buyerId === user.id).length,
+      rank: 0 // Will be assigned after sorting
+    };
+  });
+  
+  // ✅ Sort by score (highest first) and assign ranks
+  leaderboard.sort((a, b) => b.score - a.score);
+  leaderboard.forEach((user, index) => {
+    user.rank = index + 1;
+  });
+  
+  console.log(`✅ Leaderboard: ${leaderboard.length} users ranked`);
+  res.json({ users: leaderboard });
+});
