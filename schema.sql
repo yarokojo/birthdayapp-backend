@@ -1,18 +1,3 @@
--- Drop existing tables if needed (CAREFUL!)
--- DROP TABLE IF EXISTS video_positions CASCADE;
--- DROP TABLE IF EXISTS post_likes CASCADE;
--- DROP TABLE IF EXISTS bookmarks CASCADE;
--- DROP TABLE IF EXISTS follows CASCADE;
--- DROP TABLE IF EXISTS gift_transactions CASCADE;
--- DROP TABLE IF EXISTS notifications CASCADE;
--- DROP TABLE IF EXISTS comments CASCADE;
--- DROP TABLE IF EXISTS posts CASCADE;
--- DROP TABLE IF EXISTS wallets CASCADE;
--- DROP TABLE IF EXISTS friend_requests CASCADE;
--- DROP TABLE IF EXISTS friends CASCADE;
--- DROP TABLE IF EXISTS users CASCADE;
-
--- Users table
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
@@ -29,7 +14,6 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Friends table
 CREATE TABLE IF NOT EXISTS friends (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -38,7 +22,6 @@ CREATE TABLE IF NOT EXISTS friends (
   UNIQUE(user_id, friend_id)
 );
 
--- Friend requests table
 CREATE TABLE IF NOT EXISTS friend_requests (
   id SERIAL PRIMARY KEY,
   from_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -49,7 +32,6 @@ CREATE TABLE IF NOT EXISTS friend_requests (
   UNIQUE(from_user_id, to_user_id)
 );
 
--- Wallets table
 CREATE TABLE IF NOT EXISTS wallets (
   user_id INTEGER PRIMARY KEY REFERENCES users(id),
   balance DECIMAL(15,2) DEFAULT 0,
@@ -61,7 +43,6 @@ CREATE TABLE IF NOT EXISTS wallets (
   version INTEGER DEFAULT 0
 );
 
--- Posts table
 CREATE TABLE IF NOT EXISTS posts (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id),
@@ -80,7 +61,6 @@ CREATE TABLE IF NOT EXISTS posts (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Comments table
 CREATE TABLE IF NOT EXISTS comments (
   id SERIAL PRIMARY KEY,
   post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
@@ -91,7 +71,6 @@ CREATE TABLE IF NOT EXISTS comments (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Notifications table
 CREATE TABLE IF NOT EXISTS notifications (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -106,7 +85,6 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Gift transactions table
 CREATE TABLE IF NOT EXISTS gift_transactions (
   id SERIAL PRIMARY KEY,
   sender_id INTEGER REFERENCES users(id),
@@ -122,7 +100,6 @@ CREATE TABLE IF NOT EXISTS gift_transactions (
   completed_at TIMESTAMP
 );
 
--- Follows table
 CREATE TABLE IF NOT EXISTS follows (
   id SERIAL PRIMARY KEY,
   follower_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -131,7 +108,6 @@ CREATE TABLE IF NOT EXISTS follows (
   UNIQUE(follower_id, following_id)
 );
 
--- Bookmarks table
 CREATE TABLE IF NOT EXISTS bookmarks (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -140,7 +116,6 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   UNIQUE(user_id, post_id)
 );
 
--- Post likes table
 CREATE TABLE IF NOT EXISTS post_likes (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -149,7 +124,6 @@ CREATE TABLE IF NOT EXISTS post_likes (
   UNIQUE(user_id, post_id)
 );
 
--- Video positions table
 CREATE TABLE IF NOT EXISTS video_positions (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -159,7 +133,6 @@ CREATE TABLE IF NOT EXISTS video_positions (
   UNIQUE(user_id, post_id)
 );
 
--- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id);
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
@@ -170,8 +143,3 @@ CREATE INDEX IF NOT EXISTS idx_friends_user_id ON friends(user_id);
 CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows(follower_id);
 CREATE INDEX IF NOT EXISTS idx_follows_following_id ON follows(following_id);
 CREATE INDEX IF NOT EXISTS idx_gift_transactions_status ON gift_transactions(status);
-
--- Insert test user if needed
-INSERT INTO users (email, name, username, password_hash, birth_date)
-SELECT 'test@example.com', 'Test User', 'testuser', '$2a$10$testhash', '1990-01-01'
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'test@example.com');
