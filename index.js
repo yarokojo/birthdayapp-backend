@@ -1575,3 +1575,186 @@ app.delete('/api/reminders/:id', verifyToken, (req, res) => {
 });
 
 console.log('✅ ALL remaining endpoints added!');
+
+// ============================================================
+// ✅ PASSWORD RESET ENDPOINTS
+// ============================================================
+
+// ✅ Store reset tokens temporarily
+const resetTokens = {};
+
+// ✅ Generate reset token (simple for now - use crypto in production)
+const generateResetToken = () => {
+  return Math.random().toString(36).substring(2, 15) + 
+         Math.random().toString(36).substring(2, 15);
+};
+
+// ✅ FORGOT PASSWORD - Send reset link
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  console.log(`🔑 Forgot password request for: ${email}`);
+  
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+  
+  const normalizedEmail = email.toLowerCase().trim();
+  const user = data.users.find(u => u.email === normalizedEmail);
+  
+  // ✅ For security, don't reveal if user exists or not
+  if (!user) {
+    console.log(`⚠️ User not found: ${normalizedEmail}`);
+    // Still return success to prevent email enumeration
+    return res.json({ 
+      success: true, 
+      message: 'If an account exists, a reset link has been sent.' 
+    });
+  }
+  
+  try {
+    // ✅ Generate reset token
+    const resetToken = generateResetToken();
+    const expiresAt = Date.now() + 3600000; // 1 hour expiry
+    
+    // ✅ Store token
+    resetTokens[resetToken] = {
+      userId: user.id,
+      email: normalizedEmail,
+      expiresAt: expiresAt
+    };
+    
+    console.log(`✅ Reset token generated for ${user.email}: ${resetToken}`);
+    console.log(`📝 Token expires at: ${new Date(expiresAt).toISOString()}`);
+    
+    // ✅ In production, send email with reset link
+    // For now, return the token in response (for testing)
+    const resetLink = `https://birthdayapp.com/reset-password?token=${resetToken}`;
+    
+    // ✅ Log the reset link (for development)
+    console.log(`🔗 Reset link: ${resetLink}`);
+    
+    // ✅ Store reset notification
+    addNotification(
+      user.id,
+      'system',
+      '🔑 Password Reset',
+      'You requested a password reset. Click the link in your email.',
+      null,
+      null,
+      null,
+      { resetToken, expiresAt }
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'Password reset link has been sent to your email.',
+      // ✅ Only include token in development
+      ...(process.env.NODE_ENV === 'development' && { resetToken, resetLink })
+    });
+    
+  } catch (error) {
+    console.error('❌ Forgot password error:', error);
+    res.status(500).json({ error: 'Failed to process request' });
+  }
+});
+
+// ✅ RESET PASSWORD - Verify token and update password
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body;
+  console.log(`🔑 Reset password request with token: ${token}`);
+  
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: 'Token and new password are required' });
+  }
+  
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  
+  // ✅ Find token
+  const resetData = resetTokens[token];
+  
+  if (!resetData) {
+    console.log(`❌ Invalid or expired token: ${token}`);
+    return res.status(400).json({ error: 'Invalid or expired reset token' });
+  }
+  
+  // ✅ Check if token is expired
+  if (Date.now() > resetData.expiresAt) {
+    console.log(`❌ Token expired: ${token}`);
+    delete resetTokens[token];
+    return res.status(400).json({ error: 'Reset token has expired' });
+  }
+  
+  try {
+    // ✅ Find user
+    const userId = resetData.userId;
+    const userIndex = data.users.findIndex(u => u.id === userId);
+    
+    if (userIndex === -1) {
+      console.log(`❌ User not found for token: ${token}`);
+      delete resetTokens[token];
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // ✅ Update password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    data.users[userIndex].password_hash = hashedPassword;
+    
+    // ✅ Remove used token
+    delete resetTokens[token];
+    
+    saveData();
+    console.log(`✅ Password reset successful for user: ${data.users[userIndex].email}`);
+    
+    // ✅ Send notification
+    addNotification(
+      userId,
+      'system',
+      '✅ Password Reset Complete',
+      'Your password has been successfully changed.',
+      null,
+      null,
+      null,
+      { timestamp: new Date().toISOString() }
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'Password has been reset successfully. You can now login with your new password.' 
+    });
+    
+  } catch (error) {
+    console.error('❌ Reset password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// ✅ VERIFY RESET TOKEN - Check if token is valid
+app.post('/api/auth/verify-reset-token', (req, res) => {
+  const { token } = req.body;
+  console.log(`🔑 Verifying reset token: ${token}`);
+  
+  if (!token) {
+    return res.status(400).json({ error: 'Token is required' });
+  }
+  
+  const resetData = resetTokens[token];
+  
+  if (!resetData) {
+    return res.status(400).json({ error: 'Invalid or expired reset token' });
+  }
+  
+  if (Date.now() > resetData.expiresAt) {
+    delete resetTokens[token];
+    return res.status(400).json({ error: 'Reset token has expired' });
+  }
+  
+  res.json({ 
+    valid: true, 
+    email: resetData.email,
+    userId: resetData.userId
+  });
+});
+
+console.log('✅ Password reset endpoints added');
