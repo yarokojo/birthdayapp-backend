@@ -274,6 +274,13 @@ app.post("/api/auth/login", async (req, res) => {
   const normalizedEmail = email.toLowerCase();
   const user = data.users.find(u => u.email === normalizedEmail);
   
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
+  
   if (!user) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
@@ -310,6 +317,13 @@ app.post('/api/auth/change-password', verifyToken, async (req, res) => {
     }
     
     const user = data.users.find(u => u.id === userId);
+  
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -335,6 +349,13 @@ app.post('/api/auth/change-password', verifyToken, async (req, res) => {
 // ============================================================
 app.get('/api/users/profile', verifyToken, (req, res) => {
   const user = data.users.find(u => u.id === req.userId);
+  
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
   if (!user) {
     return res.status(404).json({ error: 'User not found' });
   }
@@ -490,20 +511,32 @@ app.post('/api/wallet/withdraw', verifyToken, (req, res) => {
   data.companyAccount.totalFees += fee;
   saveData();
   
-  res.json({
-    success: true,
-    amount: amountNum,
-    fee: fee,
-    userReceives: amountNum - fee,
-    newBalance: data.wallets[userId].balance
+app.get('/api/posts', (req, res) => {
+  const allPosts = data.posts || [];
+  const enrichedPosts = allPosts.map(post => {
+    const author = data.users.find(u => u.id === post.userId);
+    return { 
+      ...post, 
+      phone: author?.phone || '', 
+      network: author?.network || 'MTN',
+      // ✅ Ensure song data is preserved
+      birthdaySongId: post.birthdaySongId || null,
+      birthdaySongUrl: post.birthdaySongUrl || null,
+      birthdaySongName: post.birthdaySongName || null,
+    };
   });
+  
+  // ✅ Log posts with songs for debugging
+  const songs = enrichedPosts.filter(p => p.birthdaySongUrl && p.birthdaySongUrl !== '');
+  if (songs.length > 0) {
+    console.log(`🎵 Returning ${songs.length} posts with birthday songs`);
+    songs.forEach(p => {
+      console.log(`  🎵 ${p.id}: ${p.birthdaySongName} -> ${p.birthdaySongUrl?.substring(0, 50)}...`);
+    });
+  }
+  
+  res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 });
-
-app.post('/api/wallet/add-gift', verifyToken, (req, res) => {
-  const { celebrantId, celebrantName, giftAmount, giftName, fromName, isAnonymous } = req.body;
-  const amount = parseFloat(giftAmount);
-  const senderName = isAnonymous ? 'Anonymous' : (fromName || 'Someone');
-  const newBalance = addToWallet(celebrantId, amount, giftName, senderName);
   saveData();
   res.json({ success: true, newBalance, message: `₵${amount} added to wallet` });
 });
@@ -515,16 +548,28 @@ app.get('/api/posts', (req, res) => {
   const allPosts = data.posts || [];
   const enrichedPosts = allPosts.map(post => {
     const author = data.users.find(u => u.id === post.userId);
-    return { ...post, phone: author?.phone || '', network: author?.network || 'MTN' };
+    return { 
+      ...post, 
+      phone: author?.phone || '', 
+      network: author?.network || 'MTN',
+      // ✅ Ensure song data is preserved
+      birthdaySongId: post.birthdaySongId || null,
+      birthdaySongUrl: post.birthdaySongUrl || null,
+      birthdaySongName: post.birthdaySongName || null,
+    };
   });
+  
+  // ✅ Log posts with songs for debugging
+  const songs = enrichedPosts.filter(p => p.birthdaySongUrl && p.birthdaySongUrl !== '');
+  if (songs.length > 0) {
+    console.log(`🎵 Returning ${songs.length} posts with birthday songs`);
+    songs.forEach(p => {
+      console.log(`  🎵 ${p.id}: ${p.birthdaySongName} -> ${p.birthdaySongUrl?.substring(0, 50)}...`);
+    });
+  }
+  
   res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 });
-
-app.post('/api/posts', verifyToken, (req, res) => {
-  const { content, image, video, location, celebrationType, celebrantName, isBirthday, music, hashtags } = req.body;
-  const user = data.users.find(u => u.id === req.userId);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
   }
   
   const newPost = {
@@ -587,6 +632,13 @@ app.post('/api/posts/:id/like', verifyToken, (req, res) => {
     saveData();
     if (post.userId !== userId) {
       const user = data.users.find(u => u.id === userId);
+  
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
       addNotification(post.userId, 'like', '❤️ Post Liked', `${user?.name || 'Someone'} liked your post`);
     }
   }
@@ -643,6 +695,13 @@ app.post('/api/posts/:id/comments', verifyToken, (req, res) => {
   if (!post) return res.status(404).json({ error: "Post not found" });
   
   const user = data.users.find(u => u.id === userId);
+  
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
   const newComment = {
     id: Date.now().toString(),
     userId,
@@ -913,6 +972,13 @@ app.post('/api/gifts/purchase', verifyToken, (req, res) => {
   const { giftId, giftName, amount, network, phoneNumber, recipientId, recipientName, isPremium, senderName } = req.body;
   if (!giftId || !amount || !recipientId) return res.status(400).json({ error: "Missing required fields" });
   const user = data.users.find(u => u.id === req.userId);
+  
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
   const newBalance = addToWallet(recipientId, parseFloat(amount), giftName, senderName || user?.name || 'Someone');
   const transaction = { 
     id: Date.now().toString(), 
@@ -1026,6 +1092,13 @@ app.get('/api/stories', (req, res) => {
 app.post('/api/stories', verifyToken, (req, res) => {
   const { contentUrl, isVideo, caption, privacy } = req.body;
   const user = data.users.find(u => u.id === req.userId);
+  
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
   if (!user) return res.status(404).json({ error: 'User not found' });
   
   const newStory = {
@@ -1357,6 +1430,13 @@ app.get('/api/live/streams', (req, res) => {
 app.post('/api/live/streams', verifyToken, (req, res) => {
   const { title, privacy } = req.body;
   const user = data.users.find(u => u.id === req.userId);
+  
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   const newStream = {
@@ -1575,3 +1655,274 @@ app.delete('/api/reminders/:id', verifyToken, (req, res) => {
 });
 
 console.log('✅ ALL remaining endpoints added!');
+
+// ============================================================
+// ✅ PASSWORD RESET ENDPOINTS
+// ============================================================
+
+// ✅ Store reset tokens temporarily
+const resetTokens = {};
+
+// ✅ Generate reset token (simple for now - use crypto in production)
+const generateResetToken = () => {
+  return Math.random().toString(36).substring(2, 15) + 
+         Math.random().toString(36).substring(2, 15);
+};
+
+// ✅ FORGOT PASSWORD - Send reset link
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  console.log(`🔑 Forgot password request for: ${email}`);
+  
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+  
+  const normalizedEmail = email.toLowerCase().trim();
+  const user = data.users.find(u => u.email === normalizedEmail);
+  
+  console.log('🎵 Received birthday song data:', { 
+    birthdaySongId, 
+    birthdaySongUrl: birthdaySongUrl ? birthdaySongUrl.substring(0, 50) + '...' : null, 
+    birthdaySongName,
+    hasUrl: !!(birthdaySongUrl && birthdaySongUrl !== '')
+  });
+  
+  // ✅ For security, don't reveal if user exists or not
+  if (!user) {
+    console.log(`⚠️ User not found: ${normalizedEmail}`);
+    // Still return success to prevent email enumeration
+    return res.json({ 
+      success: true, 
+      message: 'If an account exists, a reset link has been sent.' 
+    });
+  }
+  
+  try {
+    // ✅ Generate reset token
+    const resetToken = generateResetToken();
+    const expiresAt = Date.now() + 3600000; // 1 hour expiry
+    
+    // ✅ Store token
+    resetTokens[resetToken] = {
+      userId: user.id,
+      email: normalizedEmail,
+      expiresAt: expiresAt
+    };
+    
+    console.log(`✅ Reset token generated for ${user.email}: ${resetToken}`);
+    console.log(`📝 Token expires at: ${new Date(expiresAt).toISOString()}`);
+    
+    // ✅ In production, send email with reset link
+    // For now, return the token in response (for testing)
+    const resetLink = `https://birthdayapp.com/reset-password?token=${resetToken}`;
+    
+    // ✅ Log the reset link (for development)
+    console.log(`🔗 Reset link: ${resetLink}`);
+    
+    // ✅ Store reset notification
+    addNotification(
+      user.id,
+      'system',
+      '🔑 Password Reset',
+      'You requested a password reset. Click the link in your email.',
+      null,
+      null,
+      null,
+      { resetToken, expiresAt }
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'Password reset link has been sent to your email.',
+      // ✅ Only include token in development
+      ...(process.env.NODE_ENV === 'development' && { resetToken, resetLink })
+    });
+    
+  } catch (error) {
+    console.error('❌ Forgot password error:', error);
+    res.status(500).json({ error: 'Failed to process request' });
+  }
+});
+
+// ✅ RESET PASSWORD - Verify token and update password
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body;
+  console.log(`🔑 Reset password request with token: ${token}`);
+  
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: 'Token and new password are required' });
+  }
+  
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  
+  // ✅ Find token
+  const resetData = resetTokens[token];
+  
+  if (!resetData) {
+    console.log(`❌ Invalid or expired token: ${token}`);
+    return res.status(400).json({ error: 'Invalid or expired reset token' });
+  }
+  
+  // ✅ Check if token is expired
+  if (Date.now() > resetData.expiresAt) {
+    console.log(`❌ Token expired: ${token}`);
+    delete resetTokens[token];
+    return res.status(400).json({ error: 'Reset token has expired' });
+  }
+  
+  try {
+    // ✅ Find user
+    const userId = resetData.userId;
+    const userIndex = data.users.findIndex(u => u.id === userId);
+    
+    if (userIndex === -1) {
+      console.log(`❌ User not found for token: ${token}`);
+      delete resetTokens[token];
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // ✅ Update password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    data.users[userIndex].password_hash = hashedPassword;
+    
+    // ✅ Remove used token
+    delete resetTokens[token];
+    
+    saveData();
+    console.log(`✅ Password reset successful for user: ${data.users[userIndex].email}`);
+    
+    // ✅ Send notification
+    addNotification(
+      userId,
+      'system',
+      '✅ Password Reset Complete',
+      'Your password has been successfully changed.',
+      null,
+      null,
+      null,
+      { timestamp: new Date().toISOString() }
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'Password has been reset successfully. You can now login with your new password.' 
+    });
+    
+  } catch (error) {
+    console.error('❌ Reset password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// ✅ VERIFY RESET TOKEN - Check if token is valid
+app.post('/api/auth/verify-reset-token', (req, res) => {
+  const { token } = req.body;
+  console.log(`🔑 Verifying reset token: ${token}`);
+  
+  if (!token) {
+    return res.status(400).json({ error: 'Token is required' });
+  }
+  
+  const resetData = resetTokens[token];
+  
+  if (!resetData) {
+    return res.status(400).json({ error: 'Invalid or expired reset token' });
+  }
+  
+  if (Date.now() > resetData.expiresAt) {
+    delete resetTokens[token];
+    return res.status(400).json({ error: 'Reset token has expired' });
+  }
+  
+  res.json({ 
+    valid: true, 
+    email: resetData.email,
+    userId: resetData.userId
+  });
+});
+
+console.log('✅ Password reset endpoints added');
+
+// ============================================================
+// ✅ GET ALL USERS ENDPOINT
+// ============================================================
+app.get('/api/users', (req, res) => {
+  console.log('👥 Getting all users...');
+  
+  // ✅ Return all users (excluding sensitive data)
+  const allUsers = data.users.map(user => ({
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    bio: user.bio || '',
+    location: user.location || '',
+    phone: user.phone || '',
+    network: user.network || 'MTN',
+    birthDate: user.birthDate || null,
+    createdAt: user.created_at
+  }));
+  
+  console.log(`✅ Returning ${allUsers.length} users`);
+  res.json(allUsers);
+});
+
+// ============================================================
+// ✅ LEADERBOARD ENDPOINT
+// ============================================================
+app.get('/api/leaderboard', (req, res) => {
+  console.log('🏆 Getting leaderboard...');
+  
+  const timeframe = req.query.timeframe || 'week';
+  console.log(`📊 Timeframe: ${timeframe}`);
+  
+  // ✅ Calculate scores based on user activity
+  const leaderboard = data.users.map(user => {
+    // Count posts by this user
+    const userPosts = data.posts.filter(p => p.userId === user.id);
+    const postCount = userPosts.length;
+    
+    // Count gifts received
+    const giftsReceived = data.giftTransactions.filter(g => g.recipientId === user.id);
+    const giftCount = giftsReceived.length;
+    const giftTotal = giftsReceived.reduce((sum, g) => sum + (g.amount || 0), 0);
+    
+    // Count wishes received
+    const wishesReceived = data.notifications.filter(n => 
+      n.userId === user.id && n.type === 'wish'
+    ).length;
+    
+    // Count likes received
+    let likesReceived = 0;
+    userPosts.forEach(post => {
+      likesReceived += (post.likes || 0);
+    });
+    
+    // ✅ Calculate score: posts(5) + gifts(10) + wishes(3) + likes(1)
+    const score = (postCount * 5) + (giftCount * 10) + (wishesReceived * 3) + (likesReceived * 1);
+    
+    return {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+      score: score,
+      wishesSent: data.notifications.filter(n => n.userId === user.id && n.type === 'wish').length,
+      giftsSent: data.giftTransactions.filter(g => g.buyerId === user.id).length,
+      rank: 0 // Will be assigned after sorting
+    };
+  });
+  
+  // ✅ Sort by score (highest first) and assign ranks
+  leaderboard.sort((a, b) => b.score - a.score);
+  leaderboard.forEach((user, index) => {
+    user.rank = index + 1;
+  });
+  
+  console.log(`✅ Leaderboard: ${leaderboard.length} users ranked`);
+  res.json({ users: leaderboard });
+});

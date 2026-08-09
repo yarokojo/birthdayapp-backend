@@ -1,0 +1,20 @@
+{
+  "name": "birthdayapp-backend",
+  "version": "3.0.0",
+  "description": "BirthdayApp Backend API",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "migrate": "psql $DATABASE_URL -f schema.sql",
+    "postinstall": "npm run migrate || true"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1"
+  }
+}

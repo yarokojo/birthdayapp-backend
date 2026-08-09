@@ -1,0 +1,93 @@
+// ============================================================
+// ✅ FIXED: POST /api/posts - ADD birthday song fields
+// ============================================================
+app.post('/api/posts', verifyToken, (req, res) => {
+  const { 
+    content, 
+    image, 
+    video, 
+    location, 
+    celebrationType, 
+    celebrantName, 
+    isBirthday, 
+    music, 
+    hashtags,
+    birthdaySongId,      // ✅ ADD THIS
+    birthdaySongUrl,     // ✅ ADD THIS
+    birthdaySongName     // ✅ ADD THIS
+  } = req.body;
+  
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  
+  console.log('🎵 Received birthday song data:', { birthdaySongId, birthdaySongUrl, birthdaySongName });
+  
+  const newPost = {
+    id: Date.now().toString(),
+    userId: user.id,
+    content,
+    image: image || null,
+    video: video || null,
+    location: location || null,
+    celebrationType: celebrationType || 'general',
+    celebrantName: celebrantName || '',
+    isBirthday: isBirthday || celebrationType === 'birthday',
+    music: music || null,
+    hashtags: hashtags || [],
+    authorName: user.name,
+    authorHandle: user.username,
+    authorImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    phone: user.phone || '',
+    network: user.network || 'MTN',
+    likes: 0,
+    comments: 0,
+    reposts: 0,
+    views: 0,
+    createdAt: new Date().toISOString(),
+    commentList: [],
+    // ✅ CRITICAL: Store birthday song data
+    birthdaySongId: birthdaySongId || null,
+    birthdaySongUrl: birthdaySongUrl || null,
+    birthdaySongName: birthdaySongName || null,
+  };
+  
+  console.log('📝 Post saved with song:', {
+    id: newPost.id,
+    birthdaySongUrl: newPost.birthdaySongUrl,
+    birthdaySongName: newPost.birthdaySongName,
+  });
+  
+  if (!data.posts) data.posts = [];
+  data.posts.unshift(newPost);
+  saveData();
+  res.status(201).json(newPost);
+});
+
+// ============================================================
+// ✅ FIXED: GET /api/posts - Return posts with song data
+// ============================================================
+app.get('/api/posts', (req, res) => {
+  const allPosts = data.posts || [];
+  const enrichedPosts = allPosts.map(post => {
+    const author = data.users.find(u => u.id === post.userId);
+    return { 
+      ...post, 
+      phone: author?.phone || '', 
+      network: author?.network || 'MTN',
+      // ✅ Ensure song data is preserved
+      birthdaySongId: post.birthdaySongId || null,
+      birthdaySongUrl: post.birthdaySongUrl || null,
+      birthdaySongName: post.birthdaySongName || null,
+    };
+  });
+  
+  // ✅ Log posts with songs for debugging
+  const songs = enrichedPosts.filter(p => p.birthdaySongUrl && p.birthdaySongUrl !== '');
+  if (songs.length > 0) {
+    console.log(`🎵 Returning ${songs.length} posts with birthday songs`);
+  }
+  
+  res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+});
