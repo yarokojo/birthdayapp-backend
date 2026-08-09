@@ -454,3 +454,292 @@ app.listen(PORT, "0.0.0.0", () => {
   // ✅ Initialize database tables after server starts
   initDatabaseTables();
 });
+
+// ============================================================
+// ✅ USERS ENDPOINTS
+// ============================================================
+app.get('/api/users/profile', verifyToken, (req, res) => {
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  res.json({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    username: user.username,
+    bio: user.bio || '',
+    location: user.location || '',
+    profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    birthDate: user.birthDate || null,
+    phone: user.phone || '',
+    network: user.network || '',
+    createdAt: user.created_at
+  });
+});
+
+// ============================================================
+// ✅ WALLET ENDPOINTS
+// ============================================================
+app.get('/api/wallet/balance', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const wallet = data.wallets[userId] || { balance: 0, transactions: [] };
+  res.json({
+    balance: wallet.balance || 0,
+    total_received: 0,
+    total_sent: 0,
+    total_withdrawn: 0,
+    total_fees_paid: 0
+  });
+});
+
+app.get('/api/wallet/transactions', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const wallet = data.wallets[userId] || { balance: 0, transactions: [] };
+  res.json({ transactions: wallet.transactions || [] });
+});
+
+// ============================================================
+// ✅ POSTS ENDPOINTS
+// ============================================================
+app.get('/api/posts', (req, res) => {
+  const allPosts = data.posts || [];
+  res.json(allPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+});
+
+app.post('/api/posts', verifyToken, (req, res) => {
+  const { content, image, video, location, celebrationType, celebrantName, isBirthday, music, hashtags } = req.body;
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  
+  const newPost = {
+    id: Date.now().toString(),
+    userId: user.id,
+    content,
+    image: image || null,
+    video: video || null,
+    location: location || null,
+    celebrationType: celebrationType || 'general',
+    celebrantName: celebrantName || '',
+    isBirthday: isBirthday || celebrationType === 'birthday',
+    music: music || null,
+    hashtags: hashtags || [],
+    authorName: user.name,
+    authorHandle: user.username,
+    authorImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    phone: user.phone || '',
+    network: user.network || 'MTN',
+    likes: 0,
+    comments: 0,
+    reposts: 0,
+    views: 0,
+    createdAt: new Date().toISOString(),
+    commentList: []
+  };
+  
+  if (!data.posts) data.posts = [];
+  data.posts.unshift(newPost);
+  saveData();
+  res.status(201).json(newPost);
+});
+
+// ============================================================
+// ✅ FRIENDS ENDPOINTS
+// ============================================================
+app.get('/api/friends/list/:userId', verifyToken, (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const friendships = data.friendships.filter(f => f.userId === userId);
+  const friends = friendships
+    .map(f => {
+      const friend = data.users.find(u => u.id === f.friendId);
+      if (!friend) return null;
+      return {
+        id: friend.id,
+        name: friend.name,
+        username: friend.username,
+        profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        birthDate: friend.birthDate || null,
+        phone: friend.phone || '',
+        network: friend.network || 'MTN'
+      };
+    })
+    .filter(Boolean);
+  res.json({ friends });
+});
+
+app.get('/api/friends/requests', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const pending = data.friendRequests.filter(r => r.toUserId === userId && r.status === 'pending');
+  res.json({ requests: pending });
+});
+
+// ============================================================
+// ✅ BANNERS ENDPOINTS
+// ============================================================
+app.get('/api/banners', (req, res) => {
+  const activeBanners = (data.banners || []).filter(b => b.active !== false);
+  res.json({ success: true, banners: activeBanners });
+});
+
+app.post('/api/banners/:id/view', (req, res) => {
+  const { id } = req.params;
+  const banner = (data.banners || []).find(b => b.id === id);
+  if (banner) { banner.views = (banner.views || 0) + 1; saveData(); }
+  res.json({ success: true });
+});
+
+app.post('/api/banners/:id/click', (req, res) => {
+  const { id } = req.params;
+  const banner = (data.banners || []).find(b => b.id === id);
+  if (banner) { banner.clicks = (banner.clicks || 0) + 1; saveData(); }
+  res.json({ success: true });
+});
+
+// ============================================================
+// ✅ NOTIFICATIONS ENDPOINTS
+// ============================================================
+app.get('/api/notifications/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const userNotifications = (data.notifications || []).filter(n => n.userId === userId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const unreadCount = userNotifications.filter(n => !n.isRead).length;
+  res.json({ notifications: userNotifications, unreadCount });
+});
+
+app.post('/api/notifications', (req, res) => {
+  const { userId, type, title, message, imageUrl, targetId, targetName, extraData } = req.body;
+  if (!userId || !type || !message) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const newNotification = {
+    id: Date.now().toString(),
+    userId: parseInt(userId),
+    type,
+    title: title || type,
+    message,
+    imageUrl: imageUrl || null,
+    targetId: targetId || null,
+    targetName: targetName || null,
+    extraData: extraData || {},
+    isRead: false,
+    createdAt: new Date().toISOString()
+  };
+  
+  if (!data.notifications) data.notifications = [];
+  data.notifications.unshift(newNotification);
+  saveData();
+  res.status(201).json(newNotification);
+});
+
+app.put('/api/notifications/:id/read', (req, res) => {
+  const { id } = req.params;
+  const notification = data.notifications.find(n => n.id === id);
+  if (!notification) return res.status(404).json({ error: "Notification not found" });
+  notification.isRead = true;
+  saveData();
+  res.json({ success: true });
+});
+
+app.put('/api/notifications/read-all/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  data.notifications.filter(n => n.userId === userId && !n.isRead).forEach(n => n.isRead = true);
+  saveData();
+  res.json({ success: true });
+});
+
+app.delete('/api/notifications/:id', (req, res) => {
+  const { id } = req.params;
+  const index = data.notifications.findIndex(n => n.id === id);
+  if (index === -1) return res.status(404).json({ error: "Notification not found" });
+  data.notifications.splice(index, 1);
+  saveData();
+  res.json({ success: true });
+});
+
+// ============================================================
+// ✅ WALLET - ADD GIFT
+// ============================================================
+app.post('/api/wallet/add-gift', verifyToken, (req, res) => {
+  const { celebrantId, celebrantName, giftAmount, giftName, fromName, isAnonymous } = req.body;
+  const amount = parseFloat(giftAmount);
+  const senderName = isAnonymous ? 'Anonymous' : (fromName || 'Someone');
+  const newBalance = addToWallet(celebrantId, amount, giftName, senderName);
+  saveData();
+  res.json({ success: true, newBalance, message: `₵${amount} added to wallet` });
+});
+
+// ============================================================
+// ✅ GIFTS ENDPOINTS
+// ============================================================
+app.post('/api/gifts/purchase', verifyToken, (req, res) => {
+  const { giftId, giftName, amount, network, phoneNumber, recipientId, recipientName, isPremium, senderName } = req.body;
+  if (!giftId || !amount || !recipientId) return res.status(400).json({ error: "Missing required fields" });
+  const user = data.users.find(u => u.id === req.userId);
+  const newBalance = addToWallet(recipientId, parseFloat(amount), giftName, senderName || user?.name || 'Someone');
+  const transaction = { 
+    id: Date.now().toString(), 
+    giftId, 
+    giftName, 
+    amount: parseFloat(amount), 
+    buyerId: req.userId, 
+    buyerName: user?.name || 'Someone', 
+    recipientId, 
+    recipientName, 
+    network, 
+    phoneNumber, 
+    isPremium: isPremium || false,
+    status: 'completed', 
+    date: new Date().toISOString() 
+  };
+  data.giftTransactions.unshift(transaction);
+  saveData();
+  addNotification(recipientId, 'gift', '🎁 Gift Received', `${user?.name || 'Someone'} sent you ${giftName} worth ₵${amount}!`);
+  res.json({ success: true, transaction, newBalance });
+});
+
+console.log('✅ All endpoints added successfully!');
+
+// ============================================================
+// ✅ INITIALIZE BANNERS (if empty)
+// ============================================================
+const initBanners = () => {
+  if (!data.banners || data.banners.length === 0) {
+    data.banners = [
+      { 
+        id: 'banner_1', 
+        title: '🎉 Today\'s Celebrations', 
+        subtitle: 'Check out today\'s events!', 
+        icon: '🎂', 
+        colors: ['#6366f1', '#8b5cf6', '#a855f7'], 
+        type: 'celebrations', 
+        link: 'today', 
+        active: true, 
+        priority: 1, 
+        views: 0, 
+        clicks: 0, 
+        createdAt: new Date().toISOString() 
+      },
+      { 
+        id: 'banner_2', 
+        title: '🎁 Gift Shop', 
+        subtitle: 'Send a gift to someone special', 
+        icon: '🎁', 
+        colors: ['#ec4899', '#f472b6', '#f9a8d4'], 
+        type: 'gifts', 
+        link: 'gift_shop', 
+        active: true, 
+        priority: 2, 
+        views: 0, 
+        clicks: 0, 
+        createdAt: new Date().toISOString() 
+      }
+    ];
+    saveData();
+    console.log('✅ Banners initialized');
+  }
+};
+
+// Call this after data is loaded
+initBanners();
