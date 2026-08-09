@@ -5,197 +5,10 @@ const path = require("path");
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const multer = require("multer");
-const { Pool } = require('pg');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
-// ============================================================
-// ✅ DATABASE CONNECTION
-// ============================================================
-const dbUrl = process.env.DATABASE_URL || '';
-const isCloudDb = dbUrl.includes('neon.tech') || dbUrl.includes('render.com');
-
-const pool = new Pool({
-  connectionString: dbUrl,
-  ssl: isCloudDb ? { rejectUnauthorized: false } : false,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 30000,
-});
-
-pool.on('connect', () => {
-  console.log('✅ Connected to PostgreSQL');
-});
-
-pool.on('error', (err) => {
-  console.error('❌ PostgreSQL error:', err.message);
-});
-
-// ============================================================
-// ✅ INITIALIZE DATABASE TABLES (FIXED - NO TEMPLATE LITERAL ISSUES)
-// ============================================================
-const initDatabaseTables = async () => {
-  console.log('📦 Checking/Creating database tables...');
-
-  const queries = [
-    `CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
-      email VARCHAR(255) UNIQUE NOT NULL,
-      name VARCHAR(255) NOT NULL,
-      username VARCHAR(255) UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      profile_image TEXT,
-      bio TEXT,
-      location TEXT,
-      phone VARCHAR(20),
-      network VARCHAR(50),
-      birth_date DATE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS friends (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      friend_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(user_id, friend_id)
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS friend_requests (
-      id SERIAL PRIMARY KEY,
-      from_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      to_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      status VARCHAR(20) DEFAULT 'pending',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(from_user_id, to_user_id)
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS wallets (
-      user_id INTEGER PRIMARY KEY REFERENCES users(id),
-      balance DECIMAL(15,2) DEFAULT 0,
-      total_received DECIMAL(15,2) DEFAULT 0,
-      total_sent DECIMAL(15,2) DEFAULT 0,
-      total_withdrawn DECIMAL(15,2) DEFAULT 0,
-      total_fees_paid DECIMAL(15,2) DEFAULT 0,
-      last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      version INTEGER DEFAULT 0
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS posts (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id),
-      content TEXT,
-      image_url TEXT,
-      video_url TEXT,
-      location TEXT,
-      celebration_type VARCHAR(50),
-      celebrant_name VARCHAR(255),
-      birthday_song_id VARCHAR(255),
-      birthday_song_url TEXT,
-      birthday_song_name VARCHAR(255),
-      likes INTEGER DEFAULT 0,
-      comments INTEGER DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS comments (
-      id SERIAL PRIMARY KEY,
-      post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-      user_id INTEGER REFERENCES users(id),
-      text TEXT NOT NULL,
-      likes INTEGER DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS notifications (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      type VARCHAR(50) NOT NULL,
-      title VARCHAR(255),
-      message TEXT,
-      image_url TEXT,
-      target_id VARCHAR(255),
-      target_name VARCHAR(255),
-      extra_data JSONB,
-      is_read BOOLEAN DEFAULT false,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS gift_transactions (
-      id SERIAL PRIMARY KEY,
-      sender_id INTEGER REFERENCES users(id),
-      recipient_id INTEGER REFERENCES users(id),
-      gift_id VARCHAR(255),
-      gift_name VARCHAR(255),
-      amount DECIMAL(15,2) NOT NULL,
-      fee DECIMAL(15,2) DEFAULT 0,
-      net_amount DECIMAL(15,2) NOT NULL,
-      status VARCHAR(20) DEFAULT 'pending',
-      payment_reference VARCHAR(255),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      completed_at TIMESTAMP
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS follows (
-      id SERIAL PRIMARY KEY,
-      follower_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      following_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(follower_id, following_id)
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS bookmarks (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      post_id VARCHAR(255) NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(user_id, post_id)
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS post_likes (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      post_id VARCHAR(255) NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(user_id, post_id)
-    );`,
-
-    `CREATE TABLE IF NOT EXISTS video_positions (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      post_id VARCHAR(255) NOT NULL,
-      position INTEGER DEFAULT 0,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(user_id, post_id)
-    );`,
-
-    `CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);`,
-    `CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read);`,
-    `CREATE INDEX IF NOT EXISTS idx_friend_requests_status ON friend_requests(status);`,
-    `CREATE INDEX IF NOT EXISTS idx_friends_user_id ON friends(user_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows(follower_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_follows_following_id ON follows(following_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_gift_transactions_status ON gift_transactions(status);`
-  ];
-
-  try {
-    for (const query of queries) {
-      await pool.query(query);
-    }
-    console.log('✅ Database tables verified/created successfully');
-  } catch (error) {
-    console.error('❌ Failed to initialize database:', error.message);
-  }
-};
 
 app.use(cors());
 app.use(express.json());
@@ -247,6 +60,45 @@ function saveData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
+// ============ INITIALIZE BANNERS ============
+const initBanners = () => {
+  if (!data.banners || data.banners.length === 0) {
+    data.banners = [
+      { 
+        id: 'banner_1', 
+        title: '🎉 Today\'s Celebrations', 
+        subtitle: 'Check out today\'s events!', 
+        icon: '🎂', 
+        colors: ['#6366f1', '#8b5cf6', '#a855f7'], 
+        type: 'celebrations', 
+        link: 'today', 
+        active: true, 
+        priority: 1, 
+        views: 0, 
+        clicks: 0, 
+        createdAt: new Date().toISOString() 
+      },
+      { 
+        id: 'banner_2', 
+        title: '🎁 Gift Shop', 
+        subtitle: 'Send a gift to someone special', 
+        icon: '🎁', 
+        colors: ['#ec4899', '#f472b6', '#f9a8d4'], 
+        type: 'gifts', 
+        link: 'gift_shop', 
+        active: true, 
+        priority: 2, 
+        views: 0, 
+        clicks: 0, 
+        createdAt: new Date().toISOString() 
+      }
+    ];
+    saveData();
+    console.log('✅ Banners initialized');
+  }
+};
+initBanners();
+
 // ============ VIDEO UPLOAD ============
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -277,20 +129,6 @@ const videoUpload = multer({
 
 app.use('/uploads', express.static('uploads'));
 
-app.post('/api/upload/video', videoUpload.single('video'), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No video file uploaded' });
-    }
-    const videoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-    console.log('🎬 Video uploaded:', videoUrl);
-    res.json({ success: true, videoUrl });
-  } catch (error) {
-    console.error('❌ Video upload error:', error);
-    res.status(500).json({ error: 'Video upload failed' });
-  }
-});
-
 // ============ HELPER FUNCTIONS ============
 const getWalletBalance = (userId) => data.wallets[userId]?.balance || 0;
 
@@ -307,6 +145,23 @@ const addToWallet = (userId, amount, giftName, fromName) => {
   });
   saveData();
   return data.wallets[userId].balance;
+};
+
+const deductFromWallet = (userId, amount, description) => {
+  if (!data.wallets[userId]) data.wallets[userId] = { balance: 0, transactions: [] };
+  if (data.wallets[userId].balance < amount) {
+    return { success: false, error: 'Insufficient balance' };
+  }
+  data.wallets[userId].balance -= amount;
+  data.wallets[userId].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'debit',
+    amount,
+    description,
+    date: new Date().toISOString()
+  });
+  saveData();
+  return { success: true, newBalance: data.wallets[userId].balance };
 };
 
 const addNotification = (userId, type, title, message, imageUrl = null, targetId = null, targetName = null, extraData = {}) => {
@@ -358,7 +213,9 @@ app.get("/", (req, res) => {
   res.json({ message: "BirthdayApp API is running!" });
 });
 
-// ============ AUTH ENDPOINTS ============
+// ============================================================
+// ✅ AUTH ENDPOINTS
+// ============================================================
 app.post("/api/auth/register", async (req, res) => {
   const { email, password, name, username, birthDate } = req.body;
   const normalizedEmail = email.toLowerCase();
@@ -440,19 +297,37 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// ============ START SERVER ============
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`👥 Users: ${data.users.length}`);
-  console.log(`📝 Posts: ${data.posts.length}`);
-  console.log(`📢 Notifications: ${data.notifications.length}`);
-  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
-  console.log(`📊 Banners: ${data.banners.length}`);
-  console.log(`📡 Live Streams: ${data.liveStreams?.length || 0}`);
-  console.log(`📅 Calendar events: ${Object.keys(data.calendarEvents || {}).length} users have events`);
-  
-  // ✅ Initialize database tables after server starts
-  initDatabaseTables();
+app.post('/api/auth/change-password', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    
+    const user = data.users.find(u => u.id === userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+    
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password_hash = hashedPassword;
+    saveData();
+    
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('❌ Password change error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ============================================================
@@ -474,8 +349,82 @@ app.get('/api/users/profile', verifyToken, (req, res) => {
     birthDate: user.birthDate || null,
     phone: user.phone || '',
     network: user.network || '',
-    createdAt: user.created_at
+    createdAt: user.created_at,
+    followersCount: data.follows ? data.follows.filter(f => f.followingId === user.id).length : 0,
+    followingCount: data.follows ? data.follows.filter(f => f.followerId === user.id).length : 0
   });
+});
+
+app.put('/api/users/profile', verifyToken, (req, res) => {
+  const userIndex = data.users.findIndex(u => u.id === req.userId);
+  if (userIndex === -1) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  
+  const { name, bio, location, username, profileImage, phone, network, birthDate } = req.body;
+  if (name !== undefined) data.users[userIndex].name = name;
+  if (bio !== undefined) data.users[userIndex].bio = bio;
+  if (location !== undefined) data.users[userIndex].location = location;
+  if (username !== undefined) data.users[userIndex].username = username;
+  if (profileImage !== undefined) data.users[userIndex].profileImage = profileImage;
+  if (phone !== undefined) data.users[userIndex].phone = phone;
+  if (network !== undefined) data.users[userIndex].network = network;
+  if (birthDate !== undefined) data.users[userIndex].birthDate = birthDate;
+  saveData();
+  
+  const updatedUser = data.users[userIndex];
+  res.json({
+    id: updatedUser.id,
+    name: updatedUser.name,
+    email: updatedUser.email,
+    username: updatedUser.username,
+    bio: updatedUser.bio || '',
+    location: updatedUser.location || '',
+    profileImage: updatedUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    birthDate: updatedUser.birthDate || null,
+    phone: updatedUser.phone || '',
+    network: updatedUser.network || '',
+    createdAt: updatedUser.created_at
+  });
+});
+
+app.get('/api/users/search', (req, res) => {
+  const { q } = req.query;
+  if (!q || q.length === 0) {
+    return res.json([]);
+  }
+  const searchTerm = q.toLowerCase().trim();
+  const results = data.users.filter(user => {
+    const nameMatch = user.name?.toLowerCase().includes(searchTerm);
+    const usernameMatch = user.username?.toLowerCase().includes(searchTerm);
+    const emailMatch = user.email?.toLowerCase().includes(searchTerm);
+    return nameMatch || usernameMatch || emailMatch;
+  });
+  res.json(results.map(user => ({
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    birthDate: user.birthDate || null,
+    phone: user.phone || '',
+    network: user.network || ''
+  })));
+});
+
+app.delete('/api/user/delete', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const userIndex = data.users.findIndex(u => u.id === userId);
+  if (userIndex !== -1) data.users.splice(userIndex, 1);
+  delete data.wallets[userId];
+  data.friendships = data.friendships.filter(f => f.userId !== userId && f.friendId !== userId);
+  data.friendRequests = data.friendRequests.filter(r => r.fromUserId !== userId && r.toUserId !== userId);
+  data.posts = data.posts.filter(p => p.userId !== userId);
+  data.notifications = data.notifications.filter(n => n.userId !== userId);
+  delete data.userSettings[userId];
+  delete data.blockedUsers[userId];
+  delete data.calendarEvents[userId];
+  saveData();
+  res.json({ success: true, message: 'Account deleted successfully' });
 });
 
 // ============================================================
@@ -499,12 +448,76 @@ app.get('/api/wallet/transactions', verifyToken, (req, res) => {
   res.json({ transactions: wallet.transactions || [] });
 });
 
+app.post('/api/wallet/withdraw', verifyToken, (req, res) => {
+  const { amount, network, phoneNumber } = req.body;
+  const userId = req.userId;
+  
+  if (!amount || !network || !phoneNumber) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const amountNum = parseFloat(amount);
+  const fee = amountNum * 0.01;
+  const totalDeduction = amountNum + fee;
+  
+  if (!data.wallets[userId]) {
+    return res.status(400).json({ error: 'Wallet not found' });
+  }
+  
+  if (data.wallets[userId].balance < totalDeduction) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+  
+  data.wallets[userId].balance -= totalDeduction;
+  data.wallets[userId].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'withdrawal',
+    amount: amountNum,
+    fee: fee,
+    network,
+    phoneNumber,
+    description: `Withdrawal to ${network}`,
+    date: new Date().toISOString()
+  });
+  
+  data.companyFees.unshift({
+    id: Date.now().toString(),
+    amount: fee,
+    fromUserId: userId,
+    withdrawalAmount: amountNum,
+    date: new Date().toISOString()
+  });
+  data.companyAccount.totalFees += fee;
+  saveData();
+  
+  res.json({
+    success: true,
+    amount: amountNum,
+    fee: fee,
+    userReceives: amountNum - fee,
+    newBalance: data.wallets[userId].balance
+  });
+});
+
+app.post('/api/wallet/add-gift', verifyToken, (req, res) => {
+  const { celebrantId, celebrantName, giftAmount, giftName, fromName, isAnonymous } = req.body;
+  const amount = parseFloat(giftAmount);
+  const senderName = isAnonymous ? 'Anonymous' : (fromName || 'Someone');
+  const newBalance = addToWallet(celebrantId, amount, giftName, senderName);
+  saveData();
+  res.json({ success: true, newBalance, message: `₵${amount} added to wallet` });
+});
+
 // ============================================================
 // ✅ POSTS ENDPOINTS
 // ============================================================
 app.get('/api/posts', (req, res) => {
   const allPosts = data.posts || [];
-  res.json(allPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+  const enrichedPosts = allPosts.map(post => {
+    const author = data.users.find(u => u.id === post.userId);
+    return { ...post, phone: author?.phone || '', network: author?.network || 'MTN' };
+  });
+  res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 });
 
 app.post('/api/posts', verifyToken, (req, res) => {
@@ -545,6 +558,133 @@ app.post('/api/posts', verifyToken, (req, res) => {
   res.status(201).json(newPost);
 });
 
+app.delete('/api/posts/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  if (post.userId !== req.userId) {
+    return res.status(403).json({ error: 'Not authorized to delete this post' });
+  }
+  const index = (data.posts || []).findIndex(p => p.id === id);
+  if (index !== -1) {
+    data.posts.splice(index, 1);
+    saveData();
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/posts/:id/like', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  if (!data.postLikes) data.postLikes = [];
+  const existing = data.postLikes.find(l => l.postId === id && l.userId === userId);
+  if (!existing) {
+    data.postLikes.push({ postId: id, userId, createdAt: new Date().toISOString() });
+    post.likes = (post.likes || 0) + 1;
+    saveData();
+    if (post.userId !== userId) {
+      const user = data.users.find(u => u.id === userId);
+      addNotification(post.userId, 'like', '❤️ Post Liked', `${user?.name || 'Someone'} liked your post`);
+    }
+  }
+  res.json({ success: true, likes: post.likes });
+});
+
+app.delete('/api/posts/:id/like', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  if (data.postLikes) {
+    const index = data.postLikes.findIndex(l => l.postId === id && l.userId === userId);
+    if (index !== -1) {
+      data.postLikes.splice(index, 1);
+      post.likes = Math.max(0, (post.likes || 0) - 1);
+      saveData();
+    }
+  }
+  res.json({ success: true, likes: post.likes });
+});
+
+app.post('/api/posts/:id/bookmark', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  if (!data.bookmarks) data.bookmarks = [];
+  const existing = data.bookmarks.find(b => b.postId === id && b.userId === userId);
+  if (!existing) {
+    data.bookmarks.push({ postId: id, userId, createdAt: new Date().toISOString() });
+    saveData();
+  }
+  res.json({ success: true });
+});
+
+app.delete('/api/posts/:id/bookmark', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  if (data.bookmarks) {
+    const index = data.bookmarks.findIndex(b => b.postId === id && b.userId === userId);
+    if (index !== -1) {
+      data.bookmarks.splice(index, 1);
+      saveData();
+    }
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/posts/:id/comments', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const { text } = req.body;
+  const userId = req.userId;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  const user = data.users.find(u => u.id === userId);
+  const newComment = {
+    id: Date.now().toString(),
+    userId,
+    userName: user?.name || 'Anonymous',
+    userAvatar: user?.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    text,
+    createdAt: new Date().toISOString(),
+    likes: 0
+  };
+  if (!post.commentList) post.commentList = [];
+  post.commentList.push(newComment);
+  post.comments = (post.comments || 0) + 1;
+  saveData();
+  
+  if (post.userId !== userId) {
+    addNotification(post.userId, 'comment', '💬 New Comment', `${user?.name || 'Someone'} commented on your post`);
+  }
+  res.status(201).json(newComment);
+});
+
+app.delete('/api/posts/:postId/comments/:commentId', verifyToken, (req, res) => {
+  const { postId, commentId } = req.params;
+  const userId = req.userId;
+  const post = (data.posts || []).find(p => p.id === postId);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  const index = post.commentList?.findIndex(c => c.id === commentId);
+  if (index === -1 || index === undefined) {
+    return res.status(404).json({ error: "Comment not found" });
+  }
+  
+  const comment = post.commentList[index];
+  if (comment.userId !== userId && post.userId !== userId) {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+  
+  post.commentList.splice(index, 1);
+  post.comments = Math.max(0, (post.comments || 0) - 1);
+  saveData();
+  res.json({ success: true });
+});
+
 // ============================================================
 // ✅ FRIENDS ENDPOINTS
 // ============================================================
@@ -572,7 +712,105 @@ app.get('/api/friends/list/:userId', verifyToken, (req, res) => {
 app.get('/api/friends/requests', verifyToken, (req, res) => {
   const userId = req.userId;
   const pending = data.friendRequests.filter(r => r.toUserId === userId && r.status === 'pending');
-  res.json({ requests: pending });
+  const withDetails = pending.map(req => {
+    const fromUser = data.users.find(u => u.id === req.fromUserId);
+    return { ...req, fromUser: fromUser ? { id: fromUser.id, name: fromUser.name, username: fromUser.username, profileImage: fromUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg' } : null };
+  });
+  res.json({ requests: withDetails });
+});
+
+app.post('/api/friends/request', verifyToken, (req, res) => {
+  const { toUserId } = req.body;
+  const fromUserId = req.userId;
+  
+  if (fromUserId === toUserId) {
+    return res.status(400).json({ error: 'Cannot send request to yourself' });
+  }
+  
+  const existing = data.friendRequests.find(r => r.fromUserId === fromUserId && r.toUserId === toUserId && r.status === 'pending');
+  if (existing) {
+    return res.status(400).json({ error: 'Request already sent' });
+  }
+  
+  const newRequest = { id: Date.now().toString(), fromUserId: parseInt(fromUserId), toUserId: parseInt(toUserId), status: 'pending', createdAt: new Date().toISOString() };
+  data.friendRequests.push(newRequest);
+  saveData();
+  
+  const fromUser = data.users.find(u => u.id === fromUserId);
+  if (fromUser) {
+    addNotification(toUserId, 'friend_request', '👋 Friend Request', `${fromUser.name} sent you a friend request!`, fromUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg', fromUserId, fromUser.name);
+  }
+  res.json({ success: true, request: newRequest });
+});
+
+app.post('/api/friends/accept', verifyToken, (req, res) => {
+  const { requestId } = req.body;
+  const userId = req.userId;
+  const request = data.friendRequests.find(r => r.id === requestId);
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.toUserId !== userId) return res.status(403).json({ error: 'Not authorized' });
+  if (request.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
+  
+  request.status = 'accepted';
+  data.friendships.push({ id: Date.now().toString(), userId: request.fromUserId, friendId: request.toUserId, createdAt: new Date().toISOString() });
+  data.friendships.push({ id: (Date.now() + 1).toString(), userId: request.toUserId, friendId: request.fromUserId, createdAt: new Date().toISOString() });
+  saveData();
+  
+  const toUser = data.users.find(u => u.id === request.toUserId);
+  if (toUser) {
+    addNotification(request.fromUserId, 'friend_accept', '✅ Friend Request Accepted', `${toUser.name} accepted your friend request!`, toUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg', request.toUserId, toUser.name);
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/friends/decline', verifyToken, (req, res) => {
+  const { requestId } = req.body;
+  const userId = req.userId;
+  const request = data.friendRequests.find(r => r.id === requestId);
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.toUserId !== userId) return res.status(403).json({ error: 'Not authorized' });
+  request.status = 'declined';
+  saveData();
+  res.json({ success: true });
+});
+
+app.delete('/api/friends/:friendId', verifyToken, (req, res) => {
+  const friendId = parseInt(req.params.friendId);
+  const userId = req.userId;
+  const index1 = data.friendships.findIndex(f => f.userId === userId && f.friendId === friendId);
+  const index2 = data.friendships.findIndex(f => f.userId === friendId && f.friendId === userId);
+  if (index1 !== -1) data.friendships.splice(index1, 1);
+  if (index2 !== -1) data.friendships.splice(index2, 1);
+  saveData();
+  res.json({ success: true });
+});
+
+// ============================================================
+// ✅ FOLLOW ENDPOINTS
+// ============================================================
+app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const followerId = req.userId;
+  if (followerId === userId) return res.status(400).json({ error: 'Cannot follow yourself' });
+  if (!data.follows) data.follows = [];
+  const existing = data.follows.find(f => f.followerId === followerId && f.followingId === userId);
+  if (!existing) {
+    data.follows.push({ id: Date.now().toString(), followerId, followingId: userId, createdAt: new Date().toISOString() });
+    saveData();
+    const follower = data.users.find(u => u.id === followerId);
+    if (follower) addNotification(userId, 'follow', '👤 New Follower', `${follower.name} started following you!`, follower.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg', followerId, follower.name);
+  }
+  res.json({ success: true });
+});
+
+app.delete('/api/users/follow/:userId', verifyToken, (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const followerId = req.userId;
+  if (data.follows) {
+    data.follows = data.follows.filter(f => !(f.followerId === followerId && f.followingId === userId));
+    saveData();
+  }
+  res.json({ success: true });
 });
 
 // ============================================================
@@ -659,20 +897,18 @@ app.delete('/api/notifications/:id', (req, res) => {
 });
 
 // ============================================================
-// ✅ WALLET - ADD GIFT
-// ============================================================
-app.post('/api/wallet/add-gift', verifyToken, (req, res) => {
-  const { celebrantId, celebrantName, giftAmount, giftName, fromName, isAnonymous } = req.body;
-  const amount = parseFloat(giftAmount);
-  const senderName = isAnonymous ? 'Anonymous' : (fromName || 'Someone');
-  const newBalance = addToWallet(celebrantId, amount, giftName, senderName);
-  saveData();
-  res.json({ success: true, newBalance, message: `₵${amount} added to wallet` });
-});
-
-// ============================================================
 // ✅ GIFTS ENDPOINTS
 // ============================================================
+app.get('/api/gifts', (req, res) => {
+  res.json([
+    { id: 1, name: "Gold Bar", price: 100, category: "Luxury", icon: "🥇" },
+    { id: 2, name: "Diamond Ring", price: 150, category: "Luxury", icon: "💍" },
+    { id: 3, name: "Celebration Cake", price: 50, category: "Food", icon: "🎂" },
+    { id: 4, name: "Fresh Flowers", price: 40, category: "Flowers", icon: "🌹" },
+    { id: 5, name: "Premium Drink", price: 20, category: "Drinks", icon: "🍾" }
+  ]);
+});
+
 app.post('/api/gifts/purchase', verifyToken, (req, res) => {
   const { giftId, giftName, amount, network, phoneNumber, recipientId, recipientName, isPremium, senderName } = req.body;
   if (!giftId || !amount || !recipientId) return res.status(400).json({ error: "Missing required fields" });
@@ -699,47 +935,169 @@ app.post('/api/gifts/purchase', verifyToken, (req, res) => {
   res.json({ success: true, transaction, newBalance });
 });
 
-console.log('✅ All endpoints added successfully!');
-
 // ============================================================
-// ✅ INITIALIZE BANNERS (if empty)
+// ✅ VIDEO UPLOAD ENDPOINT
 // ============================================================
-const initBanners = () => {
-  if (!data.banners || data.banners.length === 0) {
-    data.banners = [
-      { 
-        id: 'banner_1', 
-        title: '🎉 Today\'s Celebrations', 
-        subtitle: 'Check out today\'s events!', 
-        icon: '🎂', 
-        colors: ['#6366f1', '#8b5cf6', '#a855f7'], 
-        type: 'celebrations', 
-        link: 'today', 
-        active: true, 
-        priority: 1, 
-        views: 0, 
-        clicks: 0, 
-        createdAt: new Date().toISOString() 
-      },
-      { 
-        id: 'banner_2', 
-        title: '🎁 Gift Shop', 
-        subtitle: 'Send a gift to someone special', 
-        icon: '🎁', 
-        colors: ['#ec4899', '#f472b6', '#f9a8d4'], 
-        type: 'gifts', 
-        link: 'gift_shop', 
-        active: true, 
-        priority: 2, 
-        views: 0, 
-        clicks: 0, 
-        createdAt: new Date().toISOString() 
-      }
-    ];
-    saveData();
-    console.log('✅ Banners initialized');
+app.post('/api/upload/video', videoUpload.single('video'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No video file uploaded' });
+    }
+    const videoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    console.log('🎬 Video uploaded:', videoUrl);
+    res.json({ success: true, videoUrl });
+  } catch (error) {
+    console.error('❌ Video upload error:', error);
+    res.status(500).json({ error: 'Video upload failed' });
   }
-};
+});
 
-// Call this after data is loaded
-initBanners();
+// ============================================================
+// ✅ IMAGE UPLOAD ENDPOINT
+// ============================================================
+const imageStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'image-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const imageUpload = multer({
+  storage: imageStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
+
+app.post('/api/upload/image', imageUpload.single('image'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file uploaded' });
+    }
+    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    console.log('🖼️ Image uploaded:', imageUrl);
+    res.json({ success: true, imageUrl });
+  } catch (error) {
+    console.error('❌ Image upload error:', error);
+    res.status(500).json({ error: 'Image upload failed' });
+  }
+});
+
+// ============================================================
+// ✅ SUPPORT/FEEDBACK ENDPOINT
+// ============================================================
+app.post('/api/support/feedback', (req, res) => {
+  const { userId, feedback, email, timestamp } = req.body;
+  console.log(`📝 Feedback from user ${userId}: ${feedback}`);
+  res.json({ success: true, message: 'Feedback received' });
+});
+
+// ============================================================
+// ✅ START SERVER
+// ============================================================
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`👥 Users: ${data.users.length}`);
+  console.log(`📝 Posts: ${data.posts.length}`);
+  console.log(`📢 Notifications: ${data.notifications.length}`);
+  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
+  console.log(`📊 Banners: ${data.banners.length}`);
+  console.log(`📡 Live Streams: ${data.liveStreams?.length || 0}`);
+  console.log(`📅 Calendar events: ${Object.keys(data.calendarEvents || {}).length} users have events`);
+  console.log('✅ All endpoints loaded successfully!');
+});
+
+// ============================================================
+// ✅ STORIES ENDPOINTS
+// ============================================================
+app.get('/api/stories', (req, res) => {
+  const stories = data.stories || [];
+  res.json({ success: true, stories });
+});
+
+app.post('/api/stories', verifyToken, (req, res) => {
+  const { contentUrl, isVideo, caption, privacy } = req.body;
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  
+  const newStory = {
+    id: Date.now().toString(),
+    userId: user.id.toString(),
+    userName: user.name,
+    userAvatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    contentUrl, 
+    isVideo: isVideo || false, 
+    caption: caption || '', 
+    privacy: privacy || 'friends',
+    likes: 0, 
+    viewers: 0, 
+    createdAt: new Date().toISOString(), 
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+  };
+  
+  if (!data.stories) data.stories = [];
+  data.stories.unshift(newStory);
+  saveData();
+  res.status(201).json({ success: true, story: newStory });
+});
+
+app.post('/api/stories/seen', verifyToken, (req, res) => {
+  const { storyId } = req.body;
+  const userId = req.userId;
+  if (!data.seenStories) data.seenStories = [];
+  const existing = data.seenStories.find(s => s.storyId === storyId && s.userId === userId);
+  if (!existing) {
+    data.seenStories.push({ storyId, userId, seenAt: new Date().toISOString() });
+    const story = (data.stories || []).find(s => s.id === storyId);
+    if (story) story.viewers = (story.viewers || 0) + 1;
+    saveData();
+  }
+  res.json({ success: true });
+});
+
+app.get('/api/stories/seen/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.seenStories) data.seenStories = [];
+  const seenStoryIds = data.seenStories.filter(s => s.userId === userId).map(s => s.storyId);
+  res.json({ success: true, seenStoryIds });
+});
+
+app.post('/api/stories/:id/like', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const story = (data.stories || []).find(s => s.id === id);
+  if (!story) return res.status(404).json({ error: 'Story not found' });
+  story.likes = (story.likes || 0) + 1;
+  saveData();
+  res.json({ success: true, likes: story.likes });
+});
+
+app.delete('/api/stories/:id/like', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const story = (data.stories || []).find(s => s.id === id);
+  if (!story) return res.status(404).json({ error: 'Story not found' });
+  story.likes = Math.max(0, (story.likes || 0) - 1);
+  saveData();
+  res.json({ success: true, likes: story.likes });
+});
+
+app.delete('/api/stories/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  const storyIndex = (data.stories || []).findIndex(s => s.id === id);
+  if (storyIndex === -1) return res.status(404).json({ error: 'Story not found' });
+  const story = data.stories[storyIndex];
+  if (parseInt(story.userId) !== userId) return res.status(403).json({ error: 'Not your story' });
+  data.stories.splice(storyIndex, 1);
+  saveData();
+  res.json({ success: true });
+});
+
+console.log('✅ Stories endpoints added');
