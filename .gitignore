@@ -1,35 +1,25 @@
-# Node
 node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
 package-lock.json
-
-# Environment
 .env
 .env.local
-.env.*.local
-
-# Uploads
-uploads/*.mp4
-uploads/*.jpg
-uploads/*.jpeg
-uploads/*.png
-
-# Data
-data.json
+.env.production
+uploads/
+*.mp4
+*.jpg
+*.jpeg
+*.png
 *.log
-
-# OS
+npm-debug.log*
+data.json
+*.sqlite
+*.db
+*.backup
+*.bak
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Misc
-coverage/
-.nyc_output/
+dist/
+build/
