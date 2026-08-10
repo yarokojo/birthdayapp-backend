@@ -55,7 +55,7 @@ router.get('/', async (req, res) => {
           c.post_id,
           c.user_id,
           c.text,
-          c.likes_count as likes,
+          
           c.created_at,
           u.name as user_name,
           u.profile_image as user_avatar
@@ -547,7 +547,7 @@ router.get('/:id/comments', async (req, res) => {
     const { id } = req.params;
     
     const result = await query(
-      `SELECT c.id, c.user_id, c.text, c.likes_count as likes, c.created_at,
+      `SELECT c.id, c.user_id, c.text,  c.created_at,
               u.name as user_name, u.profile_image as user_avatar
        FROM comments c
        LEFT JOIN users u ON c.user_id = u.id

@@ -10,11 +10,10 @@ if (!dbUrl) {
 
 console.log('📦 DATABASE_URL exists: true');
 
-// ✅ Force disable SSL for local PostgreSQL
+// ✅ SSL enabled for Render PostgreSQL
 const pool = new Pool({
   connectionString: dbUrl,
-  ssl: false,
-  rejectUnauthorized: false,
+  ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 30000,
