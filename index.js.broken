@@ -104,21 +104,18 @@ app.use('/api/stories', require('./src/routes/stories'));
 // GET /api/stories - Get all active stories
 app.get('/api/stories', async (req, res) => {
   try {
+
+// ============================================================
+// STORIES ENDPOINTS - CLEAN VERSION
+// ============================================================
+
+// GET /api/stories - Get all stories
+app.get('/api/stories', async (req, res) => {
+  try {
     console.log('📸 GET /api/stories');
-    
-    const result = await query(\`
-      SELECT 
-        s.id, s.user_id, s.content_url, s.is_video, 
-        s.caption, s.privacy, s.likes_count, s.views_count,
-        s.created_at, s.expires_at,
-        u.name, u.username, u.profile_image
-      FROM stories s
-      LEFT JOIN users u ON u.id = s.user_id
-      WHERE s.expires_at > NOW()
-      ORDER BY s.created_at DESC
-      LIMIT 50
-    \`);
-    
+    const result = await query(
+      'SELECT s.id, s.user_id, s.content_url, s.is_video, s.caption, s.privacy, s.likes_count, s.views_count, s.created_at, s.expires_at, u.name, u.username, u.profile_image FROM stories s LEFT JOIN users u ON u.id = s.user_id WHERE s.expires_at > NOW() ORDER BY s.created_at DESC LIMIT 50'
+    );
     const stories = result.rows.map(s => ({
       id: s.id,
       userId: s.user_id,
@@ -136,7 +133,6 @@ app.get('/api/stories', async (req, res) => {
       likes: parseInt(s.likes_count) || 0,
       privacy: s.privacy || 'friends'
     }));
-    
     res.json({ success: true, stories });
   } catch (error) {
     console.error('❌ GET /stories error:', error.message);
@@ -150,31 +146,19 @@ app.post('/api/stories', verifyToken, async (req, res) => {
     console.log('📸 POST /api/stories');
     const { contentUrl, isVideo, caption, privacy } = req.body;
     const userId = req.userId;
-    
     if (!contentUrl) {
       return res.status(400).json({ error: 'Content URL is required' });
     }
-    
-    const userResult = await query(
-      'SELECT name, username, profile_image FROM users WHERE id = $1',
-      [userId]
-    );
-    
+    const userResult = await query('SELECT name, username, profile_image FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
     const user = userResult.rows[0];
-    
     const result = await query(
-      \`INSERT INTO stories (user_id, content_url, is_video, caption, privacy)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, created_at, expires_at\`,
+      'INSERT INTO stories (user_id, content_url, is_video, caption, privacy) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at, expires_at',
       [userId, contentUrl, isVideo || false, caption || '', privacy || 'friends']
     );
-    
     const story = result.rows[0];
-    
     res.status(201).json({
       success: true,
       story: {
@@ -207,23 +191,11 @@ app.post('/api/stories/seen', verifyToken, async (req, res) => {
     console.log('📸 POST /api/stories/seen');
     const { storyId } = req.body;
     const userId = req.userId;
-    
     if (!storyId) {
       return res.status(400).json({ error: 'Story ID is required' });
     }
-    
-    await query(
-      \`INSERT INTO story_views (story_id, user_id)
-       VALUES ($1, $2)
-       ON CONFLICT (story_id, user_id) DO NOTHING\`,
-      [storyId, userId]
-    );
-    
-    await query(
-      'UPDATE stories SET views_count = views_count + 1 WHERE id = $1',
-      [storyId]
-    );
-    
+    await query('INSERT INTO story_views (story_id, user_id) VALUES ($1, $2) ON CONFLICT (story_id, user_id) DO NOTHING', [storyId, userId]);
+    await query('UPDATE stories SET views_count = views_count + 1 WHERE id = $1', [storyId]);
     res.json({ success: true });
   } catch (error) {
     console.error('❌ POST /stories/seen error:', error.message);
@@ -236,12 +208,7 @@ app.get('/api/stories/seen/:userId', async (req, res) => {
   try {
     console.log('📸 GET /api/stories/seen/:userId');
     const { userId } = req.params;
-    
-    const result = await query(
-      'SELECT story_id FROM story_views WHERE user_id = $1',
-      [userId]
-    );
-    
+    const result = await query('SELECT story_id FROM story_views WHERE user_id = $1', [userId]);
     const seenStoryIds = result.rows.map(r => r.story_id);
     res.json({ success: true, seenStoryIds });
   } catch (error) {
@@ -255,19 +222,8 @@ app.post('/api/stories/:id/like', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.userId;
-    
-    await query(
-      \`INSERT INTO story_likes (story_id, user_id)
-       VALUES ($1, $2)
-       ON CONFLICT (story_id, user_id) DO NOTHING\`,
-      [id, userId]
-    );
-    
-    await query(
-      'UPDATE stories SET likes_count = likes_count + 1 WHERE id = $1',
-      [id]
-    );
-    
+    await query('INSERT INTO story_likes (story_id, user_id) VALUES ($1, $2) ON CONFLICT (story_id, user_id) DO NOTHING', [id, userId]);
+    await query('UPDATE stories SET likes_count = likes_count + 1 WHERE id = $1', [id]);
     res.json({ success: true });
   } catch (error) {
     console.error('❌ POST /stories/:id/like error:', error.message);
@@ -280,17 +236,8 @@ app.delete('/api/stories/:id/like', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.userId;
-    
-    await query(
-      'DELETE FROM story_likes WHERE story_id = $1 AND user_id = $2',
-      [id, userId]
-    );
-    
-    await query(
-      'UPDATE stories SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1',
-      [id]
-    );
-    
+    await query('DELETE FROM story_likes WHERE story_id = $1 AND user_id = $2', [id, userId]);
+    await query('UPDATE stories SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1', [id]);
     res.json({ success: true });
   } catch (error) {
     console.error('❌ DELETE /stories/:id/like error:', error.message);
@@ -303,20 +250,13 @@ app.delete('/api/stories/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.userId;
-    
-    const check = await query(
-      'SELECT user_id FROM stories WHERE id = $1',
-      [id]
-    );
-    
+    const check = await query('SELECT user_id FROM stories WHERE id = $1', [id]);
     if (check.rows.length === 0) {
       return res.status(404).json({ error: 'Story not found' });
     }
-    
     if (check.rows[0].user_id !== userId) {
       return res.status(403).json({ error: 'Not your story' });
     }
-    
     await query('DELETE FROM stories WHERE id = $1', [id]);
     res.json({ success: true });
   } catch (error) {
@@ -326,3 +266,18 @@ app.delete('/api/stories/:id', verifyToken, async (req, res) => {
 });
 
 console.log('✅ Stories routes loaded');
+
+// ============================================================
+// START SERVER
+// ============================================================
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`👥 Users: ${data.users.length}`);
+  console.log(`📝 Posts: ${data.posts.length}`);
+  console.log(`📢 Notifications: ${data.notifications.length}`);
+  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
+  console.log(`📊 Banners: ${data.banners.length}`);
+  console.log(`📡 Live Streams: ${data.liveStreams?.length || 0}`);
+  console.log(`📅 Calendar events: ${Object.keys(data.calendarEvents || {}).length} users have events`);
+});

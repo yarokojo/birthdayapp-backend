@@ -15,6 +15,53 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// ============ DATA STORAGE ============
+const DATA_FILE = path.join(__dirname, 'data.json');
+
+let data = {
+  users: [],
+  wallets: {},
+  companyFees: [],
+  giftTransactions: [],
+  notifications: [],
+  groupGifts: [],
+  friendRequests: [],
+  friendships: [],
+  follows: [],
+  posts: [],
+  postLikes: [],
+  bookmarks: [],
+  videoPositions: [],
+  seenStories: [],
+  reminders: [],
+  banners: [],
+  userSettings: {},
+  blockedUsers: {},
+  calendarEvents: {},
+  stories: [],
+  liveStreams: [],
+  companyAccount: {
+    name: 'MeolCompany',
+    accountNumber: '0596270302',
+    network: 'MTN',
+    totalFees: 0
+  }
+};
+
+try {
+  if (fs.existsSync(DATA_FILE)) {
+    const saved = fs.readFileSync(DATA_FILE, 'utf8');
+    data = JSON.parse(saved);
+    console.log(`📂 Loaded data: ${data.users.length} users, ${data.posts.length} posts`);
+  }
+} catch (err) {
+  console.log("📂 Starting fresh data");
+}
+
+function saveData() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
 // ============ UPLOADS ============
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -54,6 +101,46 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+// ============ HELPER FUNCTIONS ============
+const getWalletBalance = (userId) => data.wallets[userId]?.balance || 0;
+
+const addToWallet = (userId, amount, giftName, fromName) => {
+  if (!data.wallets[userId]) data.wallets[userId] = { balance: 0, transactions: [] };
+  data.wallets[userId].balance += amount;
+  data.wallets[userId].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'credit',
+    amount,
+    giftName,
+    fromName,
+    date: new Date().toISOString()
+  });
+  saveData();
+  return data.wallets[userId].balance;
+};
+
+const addNotification = (userId, type, title, message, imageUrl = null, targetId = null, targetName = null, extraData = {}) => {
+  console.log(`📨 Creating notification for user ${userId}: ${title}`);
+  const newNotification = {
+    id: Date.now().toString(),
+    userId: parseInt(userId),
+    type,
+    title,
+    message,
+    imageUrl,
+    targetId,
+    targetName,
+    extraData,
+    isRead: false,
+    createdAt: new Date().toISOString()
+  };
+  if (!data.notifications) data.notifications = [];
+  data.notifications.unshift(newNotification);
+  saveData();
+  console.log(`✅ Notification created: ${newNotification.id}`);
+  return newNotification;
+};
+
 // ============ ROUTES ============
 app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/users', require('./src/routes/users'));
@@ -68,6 +155,7 @@ app.use('/api/banners', require('./src/routes/banners'));
 app.use('/api/settings', require('./src/routes/settings'));
 app.use('/api/admin', require('./src/routes/admin'));
 app.use('/api/leaderboard', require('./src/routes/leaderboard'));
+app.use('/api/stories', require('./src/routes/stories'));
 
 // ============ UPLOAD ============
 app.post('/api/upload/video', verifyToken, upload.single('video'), (req, res) => {
@@ -90,9 +178,439 @@ app.get('/', (req, res) => {
   res.json({ message: 'BirthdayApp API is running!' });
 });
 
+// ============ AUTH ENDPOINTS ============
+app.post("/api/auth/register", async (req, res) => {
+  const { email, password, name, username, birthDate } = req.body;
+  const normalizedEmail = email.toLowerCase();
+  
+  if (data.users.find(u => u.email === normalizedEmail)) {
+    return res.status(400).json({ error: "User already exists" });
+  }
+  if (!birthDate) {
+    return res.status(400).json({ error: 'Birth date is required' });
+  }
+  
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    const newUser = { 
+      id: data.users.length + 1, 
+      email: normalizedEmail, 
+      name, 
+      username,
+      birthDate: birthDate || null,
+      phone: req.body.phone || '',
+      network: req.body.network || '',
+      password_hash: hashedPassword,
+      profileImage: 'https://randomuser.me/api/portraits/men/1.jpg',
+      bio: '',
+      location: '',
+      created_at: new Date().toISOString() 
+    };
+    data.users.push(newUser);
+    
+    data.wallets[newUser.id] = { balance: 0, transactions: [] };
+    data.userSettings[newUser.id] = {
+      theme: { darkMode: false, primaryColor: '#6366f1' },
+      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
+      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
+    };
+    data.blockedUsers[newUser.id] = [];
+    data.calendarEvents[newUser.id] = [];
+    saveData();
+    
+    const token = jwt.sign(
+      { userId: newUser.id, email: newUser.email },
+      process.env.JWT_SECRET || 'your_jwt_secret_key',
+      { expiresIn: '7d' }
+    );
+    
+    res.json({ token, user: { id: newUser.id, email: newUser.email, name, username, birthDate: newUser.birthDate } });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Failed to register user' });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  const normalizedEmail = email.toLowerCase();
+  const user = data.users.find(u => u.email === normalizedEmail);
+  
+  if (!user) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+  
+  try {
+    const isValid = await bcrypt.compare(password, user.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET || 'your_jwt_secret_key',
+      { expiresIn: '7d' }
+    );
+    
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name, username: user.username, birthDate: user.birthDate } });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// ============ POST ENDPOINTS ============
+app.get("/api/posts", (req, res) => {
+  const allPosts = data.posts || [];
+  const enrichedPosts = allPosts.map(post => {
+    const author = data.users.find(u => u.id === post.userId);
+    return { ...post, phone: author?.phone || '', network: author?.network || 'MTN' };
+  });
+  res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+});
+
+app.post("/api/posts", verifyToken, (req, res) => {
+  const { content, image, video, location, celebrationType, celebrantName, isBirthday, music, hashtags, birthdaySongId, birthdaySongUrl, birthdaySongName } = req.body;
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  
+  const newPost = {
+    id: Date.now().toString(),
+    userId: user.id,
+    content,
+    image: image || null,
+    video: video || null,
+    location: location || null,
+    celebrationType: celebrationType || 'general',
+    celebrantName: celebrantName || '',
+    isBirthday: isBirthday || celebrationType === 'birthday',
+    music: music || null,
+    hashtags: hashtags || [],
+    authorName: user.name,
+    authorHandle: user.username,
+    authorImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    phone: user.phone || '',
+    network: user.network || 'MTN',
+    likes: 0,
+    comments: 0,
+    reposts: 0,
+    views: 0,
+    createdAt: new Date().toISOString(),
+    commentList: [],
+    birthdaySongId: birthdaySongId || null,
+    birthdaySongUrl: birthdaySongUrl || null,
+    birthdaySongName: birthdaySongName || null
+  };
+  
+  if (!data.posts) data.posts = [];
+  data.posts.unshift(newPost);
+  saveData();
+  res.status(201).json(newPost);
+});
+
+app.delete("/api/posts/:id", verifyToken, (req, res) => {
+  const { id } = req.params;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  if (post.userId !== req.userId) {
+    return res.status(403).json({ error: 'Not authorized to delete this post' });
+  }
+  const index = (data.posts || []).findIndex(p => p.id === id);
+  if (index !== -1) {
+    data.posts.splice(index, 1);
+    saveData();
+  }
+  res.json({ success: true });
+});
+
+app.post("/api/posts/:id/like", verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  if (!data.postLikes) data.postLikes = [];
+  const existing = data.postLikes.find(l => l.postId === id && l.userId === userId);
+  if (!existing) {
+    data.postLikes.push({ postId: id, userId, createdAt: new Date().toISOString() });
+    post.likes = (post.likes || 0) + 1;
+    saveData();
+    if (post.userId !== userId) {
+      const user = data.users.find(u => u.id === userId);
+      addNotification(post.userId, 'like', '❤️ Post Liked', `${user?.name || 'Someone'} liked your post`);
+    }
+  }
+  res.json({ success: true, likes: post.likes });
+});
+
+app.delete("/api/posts/:id/like", verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  if (data.postLikes) {
+    const index = data.postLikes.findIndex(l => l.postId === id && l.userId === userId);
+    if (index !== -1) {
+      data.postLikes.splice(index, 1);
+      post.likes = Math.max(0, (post.likes || 0) - 1);
+      saveData();
+    }
+  }
+  res.json({ success: true, likes: post.likes });
+});
+
+// ============ COMMENT ENDPOINTS ============
+app.post("/api/posts/:id/comments", verifyToken, (req, res) => {
+  const { id } = req.params;
+  const { text } = req.body;
+  const userId = req.userId;
+  const post = (data.posts || []).find(p => p.id === id);
+  if (!post) return res.status(404).json({ error: "Post not found" });
+  
+  const user = data.users.find(u => u.id === userId);
+  const newComment = {
+    id: Date.now().toString(),
+    userId,
+    userName: user?.name || 'Anonymous',
+    userAvatar: user?.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    text,
+    createdAt: new Date().toISOString(),
+    likes: 0
+  };
+  if (!post.commentList) post.commentList = [];
+  post.commentList.push(newComment);
+  post.comments = (post.comments || 0) + 1;
+  saveData();
+  
+  if (post.userId !== userId) {
+    addNotification(post.userId, 'comment', '💬 New Comment', `${user?.name || 'Someone'} commented on your post`);
+  }
+  res.status(201).json(newComment);
+});
+
+// ============ WALLET ENDPOINTS ============
+app.get('/api/wallet/balance/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const balance = getWalletBalance(userId);
+  res.json({ balance, currency: 'GHS' });
+});
+
+app.get('/api/wallet/transactions/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const wallet = data.wallets[userId];
+  res.json({ transactions: wallet?.transactions || [] });
+});
+
+app.post('/api/wallet/withdraw', verifyToken, (req, res) => {
+  const { amount, network, phoneNumber } = req.body;
+  const userId = req.userId;
+  
+  if (!amount || !network || !phoneNumber) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const amountNum = parseFloat(amount);
+  const fee = amountNum * 0.01;
+  const totalDeduction = amountNum + fee;
+  
+  if (!data.wallets[userId]) {
+    return res.status(400).json({ error: 'Wallet not found' });
+  }
+  
+  if (data.wallets[userId].balance < totalDeduction) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+  
+  data.wallets[userId].balance -= totalDeduction;
+  data.wallets[userId].transactions.unshift({
+    id: Date.now().toString(),
+    type: 'withdrawal',
+    amount: amountNum,
+    fee: fee,
+    network,
+    phoneNumber,
+    description: `Withdrawal to ${network}`,
+    date: new Date().toISOString()
+  });
+  
+  data.companyFees.unshift({
+    id: Date.now().toString(),
+    amount: fee,
+    fromUserId: userId,
+    withdrawalAmount: amountNum,
+    date: new Date().toISOString()
+  });
+  data.companyAccount.totalFees += fee;
+  saveData();
+  
+  res.json({
+    success: true,
+    amount: amountNum,
+    fee: fee,
+    userReceives: amountNum - fee,
+    newBalance: data.wallets[userId].balance
+  });
+});
+
+// ============ FRIENDS ENDPOINTS ============
+app.get('/api/friends/list/:userId', verifyToken, (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const friendships = data.friendships.filter(f => f.userId === userId);
+  const friends = friendships
+    .map(f => {
+      const friend = data.users.find(u => u.id === f.friendId);
+      if (!friend) return null;
+      return {
+        id: friend.id,
+        name: friend.name,
+        username: friend.username,
+        profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+        birthDate: friend.birthDate || null,
+        phone: friend.phone || '',
+        network: friend.network || 'MTN'
+      };
+    })
+    .filter(Boolean);
+  res.json({ friends });
+});
+
+app.post('/api/friends/request', verifyToken, (req, res) => {
+  const { toUserId } = req.body;
+  const fromUserId = req.userId;
+  
+  if (fromUserId === toUserId) {
+    return res.status(400).json({ error: 'Cannot send request to yourself' });
+  }
+  
+  const existing = data.friendRequests.find(r => r.fromUserId === fromUserId && r.toUserId === toUserId && r.status === 'pending');
+  if (existing) {
+    return res.status(400).json({ error: 'Request already sent' });
+  }
+  
+  const newRequest = { id: Date.now().toString(), fromUserId: parseInt(fromUserId), toUserId: parseInt(toUserId), status: 'pending', createdAt: new Date().toISOString() };
+  data.friendRequests.push(newRequest);
+  saveData();
+  
+  const fromUser = data.users.find(u => u.id === fromUserId);
+  if (fromUser) {
+    addNotification(toUserId, 'friend_request', '👋 Friend Request', `${fromUser.name} sent you a friend request!`, fromUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg', fromUserId, fromUser.name);
+  }
+  res.json({ success: true, request: newRequest });
+});
+
+app.post('/api/friends/accept', verifyToken, (req, res) => {
+  const { requestId } = req.body;
+  const userId = req.userId;
+  const request = data.friendRequests.find(r => r.id === requestId);
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.toUserId !== userId) return res.status(403).json({ error: 'Not authorized' });
+  if (request.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
+  
+  request.status = 'accepted';
+  data.friendships.push({ id: Date.now().toString(), userId: request.fromUserId, friendId: request.toUserId, createdAt: new Date().toISOString() });
+  data.friendships.push({ id: (Date.now() + 1).toString(), userId: request.toUserId, friendId: request.fromUserId, createdAt: new Date().toISOString() });
+  saveData();
+  
+  const toUser = data.users.find(u => u.id === request.toUserId);
+  if (toUser) {
+    addNotification(request.fromUserId, 'friend_accept', '✅ Friend Request Accepted', `${toUser.name} accepted your friend request!`, toUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg', request.toUserId, toUser.name);
+  }
+  res.json({ success: true });
+});
+
+// ============ STORIES ENDPOINTS ============
+app.get('/api/stories', async (req, res) => {
+  try {
+    console.log('📸 GET /api/stories');
+    const stories = data.stories || [];
+    res.json({ success: true, stories });
+  } catch (error) {
+    console.error('❌ GET /stories error:', error.message);
+    res.json({ success: true, stories: [] });
+  }
+});
+
+app.post('/api/stories', verifyToken, (req, res) => {
+  const { contentUrl, isVideo, caption, privacy } = req.body;
+  const user = data.users.find(u => u.id === req.userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const newStory = {
+    id: Date.now().toString(),
+    userId: user.id.toString(),
+    userName: user.name,
+    userAvatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+    contentUrl, isVideo: isVideo || false, caption: caption || '', privacy: privacy || 'friends',
+    likes: 0, viewers: 0, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+  };
+  if (!data.stories) data.stories = [];
+  data.stories.unshift(newStory);
+  saveData();
+  res.status(201).json({ success: true, story: newStory });
+});
+
+app.post('/api/stories/seen', verifyToken, (req, res) => {
+  const { storyId } = req.body;
+  const userId = req.userId;
+  if (!data.seenStories) data.seenStories = [];
+  const existing = data.seenStories.find(s => s.storyId === storyId && s.userId === userId);
+  if (!existing) {
+    data.seenStories.push({ storyId, userId, seenAt: new Date().toISOString() });
+    const story = (data.stories || []).find(s => s.id === storyId);
+    if (story) story.viewers = (story.viewers || 0) + 1;
+    saveData();
+  }
+  res.json({ success: true });
+});
+
+app.get('/api/stories/seen/:userId', (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!data.seenStories) data.seenStories = [];
+  const seenStoryIds = data.seenStories.filter(s => s.userId === userId).map(s => s.storyId);
+  res.json({ success: true, seenStoryIds });
+});
+
+app.post('/api/stories/:id/like', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const story = (data.stories || []).find(s => s.id === id);
+  if (!story) return res.status(404).json({ error: 'Story not found' });
+  story.likes = (story.likes || 0) + 1;
+  saveData();
+  res.json({ success: true, likes: story.likes });
+});
+
+app.delete('/api/stories/:id/like', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const story = (data.stories || []).find(s => s.id === id);
+  if (!story) return res.status(404).json({ error: 'Story not found' });
+  story.likes = Math.max(0, (story.likes || 0) - 1);
+  saveData();
+  res.json({ success: true, likes: story.likes });
+});
+
+app.delete('/api/stories/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  const storyIndex = (data.stories || []).findIndex(s => s.id === id);
+  if (storyIndex === -1) return res.status(404).json({ error: 'Story not found' });
+  const story = data.stories[storyIndex];
+  if (parseInt(story.userId) !== userId) return res.status(403).json({ error: 'Not your story' });
+  data.stories.splice(storyIndex, 1);
+  saveData();
+  res.json({ success: true });
+});
+
 // ============ START ============
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`✅ All routes loaded`);
+  console.log(`👥 Users: ${data.users.length}`);
+  console.log(`📝 Posts: ${data.posts.length}`);
+  console.log(`📢 Notifications: ${data.notifications.length}`);
+  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
+  console.log(`📊 Banners: ${data.banners.length}`);
+  console.log(`📡 Live Streams: ${data.liveStreams?.length || 0}`);
+  console.log(`📅 Calendar events: ${Object.keys(data.calendarEvents || {}).length} users have events`);
 });
-app.use('/api/stories', require('./src/routes/stories'));
