@@ -3,7 +3,7 @@
     {
       "id": 1,
       "email": "test@example.com",
-      "password": "$2a$10$80zI0oAX9umwtyyT7UVRluDMJCeqvgkEo7WO/k4A.EzFX2EUesiyG",
+      "password": "$2a$10$grMERk4E0o0k1DTwiu7OqO26Dny5p3dlLC3JcTXkT5jsImISXtGQ6",
       "name": "Test User",
       "username": "testuser",
       "phone": "0244123456",
@@ -65,8 +65,169 @@
       "created_at": "2026-08-07T18:37:10.386Z"
     }
   ],
-  "posts": [],
-  "postLikes": [],
+  "posts": [
+    {
+      "id": "1786296830240",
+      "userId": 1,
+      "content": "",
+      "image": null,
+      "video": "http://10.177.253.189:5000/uploads/video-1786296824223-615680818.mp4",
+      "location": "Accra, Ghana",
+      "celebrationType": "birthday",
+      "celebrantName": "Test User",
+      "isBirthday": true,
+      "music": null,
+      "hashtags": [],
+      "authorName": "Test User",
+      "authorHandle": "testuser",
+      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "phone": "0244123456",
+      "network": "MTN",
+      "likes": 0,
+      "comments": 0,
+      "reposts": 0,
+      "views": 0,
+      "createdAt": "2026-08-09T17:33:50.240Z",
+      "commentList": [],
+      "birthdaySongId": null,
+      "birthdaySongUrl": null,
+      "birthdaySongName": null
+    },
+    {
+      "id": "1786290356476",
+      "userId": 1,
+      "content": "",
+      "image": null,
+      "video": "http://10.177.253.189:5000/uploads/video-1786290355141-723872458.mp4",
+      "location": "Accra, Ghana",
+      "celebrationType": "birthday",
+      "celebrantName": "Test User",
+      "isBirthday": true,
+      "music": null,
+      "hashtags": [],
+      "authorName": "Test User",
+      "authorHandle": "testuser",
+      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "phone": "0244123456",
+      "network": "MTN",
+      "likes": 0,
+      "comments": 0,
+      "reposts": 0,
+      "views": 0,
+      "createdAt": "2026-08-09T15:45:56.476Z",
+      "commentList": [],
+      "birthdaySongId": null,
+      "birthdaySongUrl": null,
+      "birthdaySongName": null
+    },
+    {
+      "id": "1786289845796",
+      "userId": 1,
+      "content": "",
+      "image": "file:///data/user/0/host.exp.exponent/cache/ImagePicker/5c1e1c2f-72d8-492a-8507-c18548cf961b.jpeg",
+      "video": null,
+      "location": "Accra, Ghana",
+      "celebrationType": "birthday",
+      "celebrantName": "Test User",
+      "isBirthday": true,
+      "music": null,
+      "hashtags": [],
+      "authorName": "Test User",
+      "authorHandle": "testuser",
+      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "phone": "0244123456",
+      "network": "MTN",
+      "likes": 0,
+      "comments": 0,
+      "reposts": 0,
+      "views": 0,
+      "createdAt": "2026-08-09T15:37:25.797Z",
+      "commentList": [],
+      "birthdaySongId": null,
+      "birthdaySongUrl": null,
+      "birthdaySongName": null
+    },
+    {
+      "id": "1786285684179",
+      "userId": 1,
+      "content": "",
+      "image": null,
+      "video": "http://10.177.253.189:5000/uploads/video-1786285679117-323723777.mp4",
+      "location": "Accra, Ghana",
+      "celebrationType": "birthday",
+      "celebrantName": "Test User",
+      "isBirthday": true,
+      "music": null,
+      "hashtags": [],
+      "authorName": "Test User",
+      "authorHandle": "testuser",
+      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "phone": "0244123456",
+      "network": "MTN",
+      "likes": 0,
+      "comments": 0,
+      "reposts": 0,
+      "views": 0,
+      "createdAt": "2026-08-09T14:28:04.179Z",
+      "commentList": [],
+      "birthdaySongId": null,
+      "birthdaySongUrl": null,
+      "birthdaySongName": null
+    },
+    {
+      "id": "1786285614989",
+      "userId": 1,
+      "content": "Dudosijsxjd\njskskslsls,snjkslsksksks\njskskslslsls.",
+      "image": null,
+      "video": null,
+      "location": "Accra, Ghana",
+      "celebrationType": "birthday",
+      "celebrantName": "Test User",
+      "isBirthday": true,
+      "music": null,
+      "hashtags": [],
+      "authorName": "Test User",
+      "authorHandle": "testuser",
+      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "phone": "0244123456",
+      "network": "MTN",
+      "likes": 1,
+      "comments": 2,
+      "reposts": 0,
+      "views": 0,
+      "createdAt": "2026-08-09T14:26:54.989Z",
+      "commentList": [
+        {
+          "id": "1786285625467",
+          "userId": 1,
+          "userName": "Test User",
+          "userAvatar": "https://randomuser.me/api/portraits/men/1.jpg",
+          "text": "Had",
+          "createdAt": "2026-08-09T14:27:05.468Z",
+          "likes": 0
+        },
+        {
+          "id": "1786285625691",
+          "userId": 1,
+          "userName": "Test User",
+          "userAvatar": "https://randomuser.me/api/portraits/men/1.jpg",
+          "text": "Had",
+          "createdAt": "2026-08-09T14:27:05.691Z",
+          "likes": 0
+        }
+      ],
+      "birthdaySongId": null,
+      "birthdaySongUrl": null,
+      "birthdaySongName": null
+    }
+  ],
+  "postLikes": [
+    {
+      "postId": "1786285614989",
+      "userId": 1,
+      "createdAt": "2026-08-09T14:26:59.549Z"
+    }
+  ],
   "bookmarks": [],
   "notifications": [],
   "wallets": {
@@ -99,7 +260,7 @@
         "#a855f7"
       ],
       "active": true,
-      "views": 3
+      "views": 86
     }
   ],
   "stories": [],
@@ -179,5 +340,79 @@
     "totalFees": 0
   },
   "blockedUsers": {},
-  "liveStreams": []
+  "liveStreams": [],
+  "calendarEvents": {
+    "1": [
+      {
+        "id": "1786294863519",
+        "title": "🎂 Test User's birthday",
+        "date": "2026-08-09",
+        "type": "birthday",
+        "celebrantName": "Test User",
+        "celebrantId": 1,
+        "reminderSet": false,
+        "createdAt": "2026-08-09T17:01:03.519Z"
+      },
+      {
+        "id": "1786294863529",
+        "title": "🎂 Sarah Johnson's birthday",
+        "date": "1995-06-17",
+        "type": "birthday",
+        "celebrantName": "Sarah Johnson",
+        "celebrantId": "3",
+        "reminderSet": false,
+        "createdAt": "2026-08-09T17:01:03.529Z"
+      },
+      {
+        "id": "1786294863548",
+        "title": "🎂 Test User's birthday",
+        "date": "2026-08-09",
+        "type": "birthday",
+        "celebrantName": "Test User",
+        "celebrantId": 1,
+        "reminderSet": false,
+        "createdAt": "2026-08-09T17:01:03.548Z"
+      },
+      {
+        "id": "1786294863563",
+        "title": "🎂 Mike Chen's birthday",
+        "date": "1995-06-17",
+        "type": "birthday",
+        "celebrantName": "Mike Chen",
+        "celebrantId": "4",
+        "reminderSet": false,
+        "createdAt": "2026-08-09T17:01:03.563Z"
+      },
+      {
+        "id": "1786294863577",
+        "title": "🎂 Test User's birthday",
+        "date": "2026-08-09",
+        "type": "birthday",
+        "celebrantName": "Test User",
+        "celebrantId": 1,
+        "reminderSet": false,
+        "createdAt": "2026-08-09T17:01:03.577Z"
+      },
+      {
+        "id": "1786294863589",
+        "title": "🎂 Emma Davis's birthday",
+        "date": "1995-06-17",
+        "type": "birthday",
+        "celebrantName": "Emma Davis",
+        "celebrantId": "5",
+        "reminderSet": false,
+        "createdAt": "2026-08-09T17:01:03.589Z"
+      },
+      {
+        "id": "1786294863680",
+        "title": "🎂 Test User's birthday",
+        "date": "2026-08-09",
+        "type": "birthday",
+        "celebrantName": "Test User",
+        "celebrantId": 1,
+        "reminderSet": false,
+        "createdAt": "2026-08-09T17:01:03.681Z"
+      }
+    ]
+  }
 }

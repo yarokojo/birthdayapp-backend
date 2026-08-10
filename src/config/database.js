@@ -9,29 +9,23 @@ if (!dbUrl) {
 }
 
 console.log('📦 DATABASE_URL exists: true');
-console.log('📦 DATABASE_URL length:', dbUrl.length);
 
-// Create pool
+// ✅ Force disable SSL for local PostgreSQL
 const pool = new Pool({
   connectionString: dbUrl,
-  ssl: { rejectUnauthorized: false },
+  ssl: false,
+  rejectUnauthorized: false,
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 30000,
 });
 
-pool.on('connect', () => {
-  console.log('✅ Connected to PostgreSQL');
-});
+pool.on('connect', () => console.log('✅ Connected to PostgreSQL'));
+pool.on('error', (err) => console.error('❌ PostgreSQL error:', err.message));
 
-pool.on('error', (err) => {
-  console.error('❌ PostgreSQL error:', err.message);
-});
-
-// ✅ DIRECT QUERY FUNCTION - NO MODIFICATIONS
-const query = (text, params) => {
+function query(text, params) {
   return pool.query(text, params);
-};
+}
 
 module.exports = {
   query,

@@ -1,0 +1,62 @@
+// ============================================================
+// ✅ FIX: Use consistent 'birthDate' field name
+// ============================================================
+
+// In POST /api/auth/register:
+const newUser = { 
+  id: data.users.length + 1, 
+  email: normalizedEmail, 
+  name, 
+  username,
+  birthDate: birthDate || null,  // ✅ Use 'birthDate' (not 'birth_date')
+  phone: req.body.phone || '',
+  network: req.body.network || '',
+  password_hash: hashedPassword,
+  profileImage: 'https://randomuser.me/api/portraits/men/1.jpg',
+  bio: '',
+  location: '',
+  created_at: new Date().toISOString() 
+};
+
+// In PUT /api/users/profile:
+const { name, bio, location, username, profileImage, phone, network, birthDate } = req.body;
+// ✅ Use 'birthDate' (not 'birth_date')
+if (birthDate !== undefined) data.users[userIndex].birthDate = birthDate;
+
+// In GET /api/users/profile:
+res.json({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  username: user.username,
+  bio: user.bio || '',
+  location: user.location || '',
+  profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+  birthDate: user.birthDate || null,  // ✅ Use 'birthDate'
+  phone: user.phone || '',
+  network: user.network || '',
+  createdAt: user.created_at,
+  // ...
+});
+
+// In GET /api/friends/list/:userId:
+return {
+  id: friend.id,
+  name: friend.name,
+  username: friend.username,
+  profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+  birthDate: friend.birthDate || null,  // ✅ Use 'birthDate'
+  phone: friend.phone || '',
+  network: friend.network || 'MTN'
+};
+
+// In GET /api/friends/birthdays:
+const friendsBirthdays = friends.map(f => ({
+  id: f.id,
+  name: f.name,
+  username: f.username,
+  avatar: f.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
+  birthDate: f.birthDate,  // ✅ Use 'birthDate'
+  phone: f.phone || '',
+  network: f.network || 'MTN'
+}));

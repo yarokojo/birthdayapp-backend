@@ -16,7 +16,7 @@ router.get('/list', requireAuth, async (req, res) => {
       `SELECT u.id, u.name, u.username, u.profile_image, u.birth_date, u.phone, u.network
        FROM friends f
        JOIN users u ON u.id = f.friend_id
-       WHERE f.user_id = $1 AND f.status = 'accepted'`,
+       WHERE f.user_id = $1`,
       [req.userId]
     );
     
@@ -40,7 +40,7 @@ router.get('/list/:userId', requireAuth, async (req, res) => {
       `SELECT u.id, u.name, u.username, u.profile_image, u.birth_date, u.phone, u.network
        FROM friends f
        JOIN users u ON u.id = f.friend_id
-       WHERE f.user_id = $1 AND f.status = 'accepted'`,
+       WHERE f.user_id = $1`,
       [userId]
     );
     
@@ -87,7 +87,7 @@ router.get('/birthdays', requireAuth, async (req, res) => {
       `SELECT u.id, u.name, u.username, u.profile_image, u.birth_date, u.phone, u.network
        FROM friends f
        JOIN users u ON u.id = f.friend_id
-       WHERE f.user_id = $1 AND f.status = 'accepted'
+       WHERE f.user_id = $1
        AND u.birth_date IS NOT NULL`,
       [req.userId]
     );
@@ -169,8 +169,8 @@ router.post('/accept', requireAuth, [
     const { from_user_id, to_user_id } = result.rows[0];
 
     await query(
-      `INSERT INTO friends (user_id, friend_id, status)
-       VALUES ($1, $2, 'accepted'), ($2, $1, 'accepted')`,
+      `INSERT INTO friends (user_id, friend_id)
+       VALUES ($1, $2), ($2, $1)`,
       [from_user_id, to_user_id]
     );
 
