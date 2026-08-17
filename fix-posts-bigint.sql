@@ -1,0 +1,3 @@
+-- Change posts id to BIGINT
+ALTER TABLE posts ALTER COLUMN id TYPE BIGINT;
+ALTER TABLE posts ALTER COLUMN user_id TYPE BIGINT;

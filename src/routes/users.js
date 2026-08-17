@@ -10,7 +10,7 @@ const router = express.Router();
 router.get('/', requireAuth, async (req, res) => {
   try {
     console.log('👥 Getting all users');
-    
+
     const result = await query(
       `SELECT id, name, username, profile_image, bio, location, birth_date
        FROM users
@@ -18,7 +18,7 @@ router.get('/', requireAuth, async (req, res) => {
        ORDER BY name ASC
        LIMIT 50`
     );
-    
+
     res.json(result.rows);
   } catch (error) {
     console.error('❌ Get users error:', error);
@@ -32,7 +32,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/profile', requireAuth, async (req, res) => {
   try {
     console.log('👤 Getting profile for user:', req.userId);
-    
+
     const result = await query(
       `SELECT id, email, name, username, bio, location, profile_image,
               phone, network, birth_date, created_at
@@ -58,7 +58,7 @@ router.get('/profile', requireAuth, async (req, res) => {
 router.put('/profile', requireAuth, async (req, res) => {
   try {
     console.log('📝 Updating profile for user:', req.userId);
-    
+
     const { name, username, bio, location, profile_image, phone, network, birth_date } = req.body;
     const userId = req.userId;
 

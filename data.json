@@ -2,417 +2,377 @@
   "users": [
     {
       "id": 1,
-      "email": "test@example.com",
-      "password": "$2a$10$grMERk4E0o0k1DTwiu7OqO26Dny5p3dlLC3JcTXkT5jsImISXtGQ6",
+      "email": "test@test.com",
       "name": "Test User",
       "username": "testuser",
-      "phone": "0244123456",
-      "network": "MTN",
-      "profileImage": "https://randomuser.me/api/portraits/men/1.jpg",
-      "birthDate": "1990-06-15"
+      "birthDate": "1990-06-17",
+      "phone": "0202226991",
+      "network": "Telecel",
+      "password_hash": "$2a$10$bRWvgNXu0IlqFZrOydKZx.0m.lmPPMrGhho1JR0CVjL1qhj1Lpave",
+      "profileImage": "http://localhost:5000/uploads/profiles/profile_1_1787006396255.jpeg",
+      "bio": "",
+      "location": "",
+      "created_at": "2026-08-17T22:04:36.770Z"
     },
     {
       "id": 2,
-      "email": "newuser@example.com",
-      "password": "$2a$10$D0uexKlmLpbRru5GKUZhUOMfQLgbzvFcKf9mQKfsd7VSgCKxehZau",
-      "name": "New User",
-      "username": "newuser",
-      "phone": "0501234567",
+      "email": "passtyyaro@gmail.com",
+      "name": "Yaro Edward Kojo",
+      "username": "yaroedwardkojo",
+      "birthDate": "2013-12-05",
+      "phone": "0596270302",
       "network": "MTN",
-      "profileImage": "https://randomuser.me/api/portraits/men/1.jpg",
-      "birthDate": null
-    },
-    {
-      "id": 3,
-      "email": "sarah@test.com",
-      "name": "Sarah Johnson",
-      "username": "sarahj",
-      "password_hash": "$2a$10$psDUPb/PJWLJVRB3rgtQyONsOA6yO82UCvq951.Zezs3ctweouQj.",
-      "profileImage": "https://randomuser.me/api/portraits/women/3.jpg",
+      "password_hash": "$2a$10$XwCEHMyc7UnvJWJvZW7slOzDJjgFkoFbjdeycFglUOp8PnurHE03e",
+      "profileImage": "http://localhost:5000/uploads/profiles/profile_2_1787006302185.jpeg",
       "bio": "",
-      "location": "Accra, Ghana",
-      "phone": "0244123456",
-      "network": "MTN",
-      "birthDate": "1995-06-17",
-      "created_at": "2026-08-07T18:37:10.118Z"
-    },
-    {
-      "id": 4,
-      "email": "mike@test.com",
-      "name": "Mike Chen",
-      "username": "mikec",
-      "password_hash": "$2a$10$d/jSxs9hZBPHvXK8zZsnJ.WbIhX9DiOxMa/o2T0XVIeZeV6WRAEQu",
-      "profileImage": "https://randomuser.me/api/portraits/men/4.jpg",
-      "bio": "",
-      "location": "Accra, Ghana",
-      "phone": "0559876543",
-      "network": "MTN",
-      "birthDate": "1995-06-17",
-      "created_at": "2026-08-07T18:37:10.259Z"
-    },
-    {
-      "id": 5,
-      "email": "emma@test.com",
-      "name": "Emma Davis",
-      "username": "emmad",
-      "password_hash": "$2a$10$.ZIibnvpWDHt4D0LopH/IuwwnxVXyG3VueOs67bOkpOYh7pxCbv5S",
-      "profileImage": "https://randomuser.me/api/portraits/women/5.jpg",
-      "bio": "",
-      "location": "Accra, Ghana",
-      "phone": "0201234567",
-      "network": "Telecel",
-      "birthDate": "1995-06-17",
-      "created_at": "2026-08-07T18:37:10.386Z"
+      "location": "",
+      "created_at": "2026-08-17T22:13:50.942Z"
     }
   ],
-  "posts": [
-    {
-      "id": "1786296830240",
-      "userId": 1,
-      "content": "",
-      "image": null,
-      "video": "http://10.177.253.189:5000/uploads/video-1786296824223-615680818.mp4",
-      "location": "Accra, Ghana",
-      "celebrationType": "birthday",
-      "celebrantName": "Test User",
-      "isBirthday": true,
-      "music": null,
-      "hashtags": [],
-      "authorName": "Test User",
-      "authorHandle": "testuser",
-      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
-      "phone": "0244123456",
-      "network": "MTN",
-      "likes": 0,
-      "comments": 0,
-      "reposts": 0,
-      "views": 0,
-      "createdAt": "2026-08-09T17:33:50.240Z",
-      "commentList": [],
-      "birthdaySongId": null,
-      "birthdaySongUrl": null,
-      "birthdaySongName": null
-    },
-    {
-      "id": "1786290356476",
-      "userId": 1,
-      "content": "",
-      "image": null,
-      "video": "http://10.177.253.189:5000/uploads/video-1786290355141-723872458.mp4",
-      "location": "Accra, Ghana",
-      "celebrationType": "birthday",
-      "celebrantName": "Test User",
-      "isBirthday": true,
-      "music": null,
-      "hashtags": [],
-      "authorName": "Test User",
-      "authorHandle": "testuser",
-      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
-      "phone": "0244123456",
-      "network": "MTN",
-      "likes": 0,
-      "comments": 0,
-      "reposts": 0,
-      "views": 0,
-      "createdAt": "2026-08-09T15:45:56.476Z",
-      "commentList": [],
-      "birthdaySongId": null,
-      "birthdaySongUrl": null,
-      "birthdaySongName": null
-    },
-    {
-      "id": "1786289845796",
-      "userId": 1,
-      "content": "",
-      "image": "file:///data/user/0/host.exp.exponent/cache/ImagePicker/5c1e1c2f-72d8-492a-8507-c18548cf961b.jpeg",
-      "video": null,
-      "location": "Accra, Ghana",
-      "celebrationType": "birthday",
-      "celebrantName": "Test User",
-      "isBirthday": true,
-      "music": null,
-      "hashtags": [],
-      "authorName": "Test User",
-      "authorHandle": "testuser",
-      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
-      "phone": "0244123456",
-      "network": "MTN",
-      "likes": 0,
-      "comments": 0,
-      "reposts": 0,
-      "views": 0,
-      "createdAt": "2026-08-09T15:37:25.797Z",
-      "commentList": [],
-      "birthdaySongId": null,
-      "birthdaySongUrl": null,
-      "birthdaySongName": null
-    },
-    {
-      "id": "1786285684179",
-      "userId": 1,
-      "content": "",
-      "image": null,
-      "video": "http://10.177.253.189:5000/uploads/video-1786285679117-323723777.mp4",
-      "location": "Accra, Ghana",
-      "celebrationType": "birthday",
-      "celebrantName": "Test User",
-      "isBirthday": true,
-      "music": null,
-      "hashtags": [],
-      "authorName": "Test User",
-      "authorHandle": "testuser",
-      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
-      "phone": "0244123456",
-      "network": "MTN",
-      "likes": 0,
-      "comments": 0,
-      "reposts": 0,
-      "views": 0,
-      "createdAt": "2026-08-09T14:28:04.179Z",
-      "commentList": [],
-      "birthdaySongId": null,
-      "birthdaySongUrl": null,
-      "birthdaySongName": null
-    },
-    {
-      "id": "1786285614989",
-      "userId": 1,
-      "content": "Dudosijsxjd\njskskslsls,snjkslsksksks\njskskslslsls.",
-      "image": null,
-      "video": null,
-      "location": "Accra, Ghana",
-      "celebrationType": "birthday",
-      "celebrantName": "Test User",
-      "isBirthday": true,
-      "music": null,
-      "hashtags": [],
-      "authorName": "Test User",
-      "authorHandle": "testuser",
-      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
-      "phone": "0244123456",
-      "network": "MTN",
-      "likes": 1,
-      "comments": 2,
-      "reposts": 0,
-      "views": 0,
-      "createdAt": "2026-08-09T14:26:54.989Z",
-      "commentList": [
-        {
-          "id": "1786285625467",
-          "userId": 1,
-          "userName": "Test User",
-          "userAvatar": "https://randomuser.me/api/portraits/men/1.jpg",
-          "text": "Had",
-          "createdAt": "2026-08-09T14:27:05.468Z",
-          "likes": 0
-        },
-        {
-          "id": "1786285625691",
-          "userId": 1,
-          "userName": "Test User",
-          "userAvatar": "https://randomuser.me/api/portraits/men/1.jpg",
-          "text": "Had",
-          "createdAt": "2026-08-09T14:27:05.691Z",
-          "likes": 0
-        }
-      ],
-      "birthdaySongId": null,
-      "birthdaySongUrl": null,
-      "birthdaySongName": null
-    }
-  ],
-  "postLikes": [
-    {
-      "postId": "1786285614989",
-      "userId": 1,
-      "createdAt": "2026-08-09T14:26:59.549Z"
-    }
-  ],
-  "bookmarks": [],
-  "notifications": [],
   "wallets": {
     "1": {
-      "balance": 100,
-      "transactions": []
+      "balance": 50,
+      "transactions": [
+        {
+          "id": "wd_1787006659401",
+          "type": "withdrawal",
+          "amount": 100,
+          "fee": 1,
+          "network": "Telecel",
+          "phoneNumber": "0202226991",
+          "description": "Withdrawal to Telecel",
+          "status": "completed",
+          "date": "2026-08-17T22:44:19.401Z"
+        },
+        {
+          "id": "1787006494759",
+          "type": "credit",
+          "amount": 150,
+          "giftName": "Diamond Ring",
+          "fromName": "Yaro Edward Kojo",
+          "date": "2026-08-17T22:41:34.759Z"
+        }
+      ],
+      "totalReceived": 150,
+      "totalWithdrawn": 100,
+      "totalFeesPaid": 1
     },
     "2": {
       "balance": 0,
-      "transactions": []
-    },
-    "843dba64-06d2-45e2-8c4a-95a3921f8a82": {
-      "balance": 0,
       "transactions": [],
       "totalReceived": 0,
-      "totalSent": 0,
       "totalWithdrawn": 0,
       "totalFeesPaid": 0
     }
   },
-  "banners": [
+  "companyFees": [
     {
-      "id": "banner_1",
-      "title": "🎉 Welcome to BirthdayApp!",
-      "subtitle": "Celebrate every moment",
-      "icon": "🎂",
-      "colors": [
-        "#6366f1",
-        "#8b5cf6",
-        "#a855f7"
-      ],
-      "active": true,
-      "views": 86
+      "id": "fee_1787006659401",
+      "userId": 1,
+      "amount": 1,
+      "type": "withdrawal_fee",
+      "date": "2026-08-17T22:44:19.401Z"
     }
   ],
-  "stories": [],
-  "seenStories": [],
+  "giftTransactions": [
+    {
+      "id": "1787006494763",
+      "giftId": "g2",
+      "giftName": "Diamond Ring",
+      "amount": 150,
+      "buyerId": 2,
+      "buyerName": "Yaro Edward Kojo",
+      "recipientId": 1,
+      "recipientName": "Test User",
+      "network": "Telecel",
+      "phoneNumber": "0202226991",
+      "status": "completed",
+      "date": "2026-08-17T22:41:34.764Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "1787006495063",
+      "userId": 1,
+      "type": "gift",
+      "title": "💎 Premium Gift Received!",
+      "message": "Someone sent you 💎 Diamond Ring worth ₵150!",
+      "imageUrl": "http://localhost:5000/uploads/profiles/profile_2_1787006302185.jpeg",
+      "targetId": "1",
+      "targetName": "Test User",
+      "extraData": {
+        "senderName": "Someone",
+        "network": "Telecel",
+        "phoneNumber": "0202226991",
+        "isPremium": true
+      },
+      "isRead": false,
+      "createdAt": "2026-08-17T22:41:35.063Z"
+    },
+    {
+      "id": "1787006495051",
+      "userId": 1,
+      "type": "gift",
+      "title": "💎 Premium Gift Received!",
+      "message": "Someone sent you 💎 Diamond Ring worth ₵150!",
+      "imageUrl": null,
+      "targetId": null,
+      "targetName": "Test User",
+      "extraData": {
+        "senderName": "Someone",
+        "network": "Telecel",
+        "phoneNumber": "0202226991",
+        "isPremium": true
+      },
+      "isRead": false,
+      "createdAt": "2026-08-17T22:41:35.051Z"
+    },
+    {
+      "id": "1787006494766",
+      "userId": 1,
+      "type": "gift",
+      "title": "🎁 Gift Received",
+      "message": "Yaro Edward Kojo sent you Diamond Ring worth ₵150!",
+      "imageUrl": null,
+      "targetId": null,
+      "targetName": null,
+      "extraData": {},
+      "isRead": false,
+      "createdAt": "2026-08-17T22:41:34.766Z"
+    },
+    {
+      "id": "1787005166973",
+      "userId": 1,
+      "type": "comment",
+      "title": "💬 New Comment",
+      "message": "Yaro Edward Kojo commented on your post: \"Nice pic\"",
+      "imageUrl": "https://randomuser.me/api/portraits/men/1.jpg",
+      "targetId": "1787005100150",
+      "targetName": "Test User",
+      "extraData": {},
+      "isRead": false,
+      "createdAt": "2026-08-17T22:19:26.973Z"
+    },
+    {
+      "id": "1787005166806",
+      "userId": 1,
+      "type": "comment",
+      "title": "💬 New Comment",
+      "message": "Yaro Edward Kojo commented on your post",
+      "imageUrl": null,
+      "targetId": null,
+      "targetName": null,
+      "extraData": {},
+      "isRead": false,
+      "createdAt": "2026-08-17T22:19:26.807Z"
+    },
+    {
+      "id": "1787005158623",
+      "userId": 1,
+      "type": "like",
+      "title": "❤️ Post Liked",
+      "message": "Yaro Edward Kojo liked your post",
+      "imageUrl": "https://randomuser.me/api/portraits/men/1.jpg",
+      "targetId": "1787005100150",
+      "targetName": "Test User",
+      "extraData": {},
+      "isRead": false,
+      "createdAt": "2026-08-17T22:19:18.623Z"
+    },
+    {
+      "id": "1787005158586",
+      "userId": 1,
+      "type": "like",
+      "title": "❤️ Post Liked",
+      "message": "Yaro Edward Kojo liked your post",
+      "imageUrl": null,
+      "targetId": null,
+      "targetName": null,
+      "extraData": {},
+      "isRead": false,
+      "createdAt": "2026-08-17T22:19:18.586Z"
+    },
+    {
+      "id": "1787005070495",
+      "userId": 2,
+      "type": "friend_accept",
+      "title": "✅ Friend Request Accepted",
+      "message": "Test User accepted your friend request!",
+      "imageUrl": "https://randomuser.me/api/portraits/men/1.jpg",
+      "targetId": 1,
+      "targetName": "Test User",
+      "extraData": {},
+      "isRead": false,
+      "createdAt": "2026-08-17T22:17:50.495Z"
+    },
+    {
+      "id": "1787004838818",
+      "userId": 1,
+      "type": "friend_request",
+      "title": "👋 Friend Request",
+      "message": "Yaro Edward Kojo sent you a friend request!",
+      "imageUrl": "https://randomuser.me/api/portraits/men/1.jpg",
+      "targetId": 2,
+      "targetName": "Yaro Edward Kojo",
+      "extraData": {},
+      "isRead": false,
+      "createdAt": "2026-08-17T22:13:58.818Z"
+    }
+  ],
+  "groupGifts": [],
+  "friendRequests": [
+    {
+      "id": "1787004838809",
+      "fromUserId": 2,
+      "toUserId": 1,
+      "status": "accepted",
+      "createdAt": "2026-08-17T22:13:58.815Z"
+    }
+  ],
   "friendships": [
     {
-      "id": "1786127830388_2",
-      "userId": 1,
-      "friendId": 2,
-      "createdAt": "2026-08-07T18:37:10.388Z"
-    },
-    {
-      "id": "1786127830389_2",
+      "id": "1787005070488",
       "userId": 2,
       "friendId": 1,
-      "createdAt": "2026-08-07T18:37:10.388Z"
+      "createdAt": "2026-08-17T22:17:50.488Z"
     },
     {
-      "id": "1786127830389_3",
+      "id": "1787005070490",
       "userId": 1,
-      "friendId": 3,
-      "createdAt": "2026-08-07T18:37:10.389Z"
-    },
-    {
-      "id": "1786127830390_3",
-      "userId": 3,
-      "friendId": 1,
-      "createdAt": "2026-08-07T18:37:10.389Z"
-    },
-    {
-      "id": "1786127830389_4",
-      "userId": 1,
-      "friendId": 4,
-      "createdAt": "2026-08-07T18:37:10.389Z"
-    },
-    {
-      "id": "1786127830390_4",
-      "userId": 4,
-      "friendId": 1,
-      "createdAt": "2026-08-07T18:37:10.389Z"
-    },
-    {
-      "id": "1786127830389_5",
-      "userId": 1,
-      "friendId": 5,
-      "createdAt": "2026-08-07T18:37:10.389Z"
-    },
-    {
-      "id": "1786127830391_5",
-      "userId": 5,
-      "friendId": 1,
-      "createdAt": "2026-08-07T18:37:10.390Z"
+      "friendId": 2,
+      "createdAt": "2026-08-17T22:17:50.489Z"
     }
   ],
-  "friendRequests": [],
   "follows": [],
+  "posts": [
+    {
+      "id": "1787005100150",
+      "userId": 1,
+      "content": "",
+      "image": "file:///data/user/0/host.exp.exponent/cache/ImagePicker/9963acdc-e2ed-4f77-8fef-439ec2e219df.jpeg",
+      "video": null,
+      "location": "Accra, Greater Accra Region, Ghana",
+      "celebrationType": "birthday",
+      "celebrantName": "Test User",
+      "isBirthday": true,
+      "music": null,
+      "hashtags": [],
+      "authorName": "Test User",
+      "authorHandle": "testuser",
+      "authorImage": "https://randomuser.me/api/portraits/men/1.jpg",
+      "phone": "",
+      "network": "MTN",
+      "likes": 1,
+      "comments": 1,
+      "reposts": 0,
+      "views": 0,
+      "createdAt": "2026-08-17T22:18:20.152Z",
+      "commentList": [
+        {
+          "id": "1787005166804",
+          "userId": 2,
+          "userName": "Yaro Edward Kojo",
+          "userAvatar": "https://randomuser.me/api/portraits/men/1.jpg",
+          "text": "Nice pic",
+          "createdAt": "2026-08-17T22:19:26.805Z",
+          "likes": 0
+        }
+      ]
+    }
+  ],
+  "postLikes": [
+    {
+      "postId": "1787005100150",
+      "userId": 2,
+      "createdAt": "2026-08-17T22:19:18.583Z"
+    }
+  ],
+  "bookmarks": [
+    {
+      "postId": "1787005100150",
+      "userId": 2,
+      "createdAt": "2026-08-17T22:19:41.016Z"
+    }
+  ],
+  "videoPositions": [],
+  "seenStories": [],
+  "reminders": [],
+  "banners": [],
   "userSettings": {
     "1": {
       "theme": {
         "darkMode": false,
         "primaryColor": "#6366f1"
+      },
+      "privacy": {
+        "birthdayVisibility": "friends",
+        "postVisibility": "friends",
+        "allowWishes": "everyone",
+        "allowTagging": "friends"
+      },
+      "notifications": {
+        "enabled": true,
+        "birthdayReminders": true,
+        "friendRequests": true,
+        "giftNotifications": true,
+        "commentNotifications": true
       }
     },
     "2": {
       "theme": {
         "darkMode": false,
         "primaryColor": "#6366f1"
+      },
+      "privacy": {
+        "birthdayVisibility": "friends",
+        "postVisibility": "friends",
+        "allowWishes": "everyone",
+        "allowTagging": "friends"
+      },
+      "notifications": {
+        "enabled": true,
+        "birthdayReminders": true,
+        "friendRequests": true,
+        "giftNotifications": true,
+        "commentNotifications": true
       }
     }
   },
-  "giftTransactions": [],
-  "companyFees": [],
+  "blockedUsers": {
+    "1": [],
+    "2": []
+  },
+  "calendarEvents": {
+    "1": [
+      {
+        "id": "1787006676935",
+        "title": "🎂 Test User's Birthday",
+        "date": "2026-08-17",
+        "type": "birthday",
+        "celebrantName": "Test User",
+        "celebrantId": 1,
+        "reminderSet": false,
+        "createdAt": "2026-08-17T22:44:36.935Z"
+      },
+      {
+        "id": "1787006676946",
+        "title": "🎂 Yaro Edward Kojo's Birthday",
+        "date": "2013-12-05",
+        "type": "birthday",
+        "celebrantName": "Yaro Edward Kojo",
+        "celebrantId": "2",
+        "reminderSet": false,
+        "createdAt": "2026-08-17T22:44:36.946Z"
+      }
+    ],
+    "2": []
+  },
+  "stories": [],
+  "liveStreams": [],
   "companyAccount": {
     "name": "MeolCompany",
     "accountNumber": "0596270302",
     "network": "MTN",
-    "totalFees": 0
-  },
-  "blockedUsers": {},
-  "liveStreams": [],
-  "calendarEvents": {
-    "1": [
-      {
-        "id": "1786294863519",
-        "title": "🎂 Test User's birthday",
-        "date": "2026-08-09",
-        "type": "birthday",
-        "celebrantName": "Test User",
-        "celebrantId": 1,
-        "reminderSet": false,
-        "createdAt": "2026-08-09T17:01:03.519Z"
-      },
-      {
-        "id": "1786294863529",
-        "title": "🎂 Sarah Johnson's birthday",
-        "date": "1995-06-17",
-        "type": "birthday",
-        "celebrantName": "Sarah Johnson",
-        "celebrantId": "3",
-        "reminderSet": false,
-        "createdAt": "2026-08-09T17:01:03.529Z"
-      },
-      {
-        "id": "1786294863548",
-        "title": "🎂 Test User's birthday",
-        "date": "2026-08-09",
-        "type": "birthday",
-        "celebrantName": "Test User",
-        "celebrantId": 1,
-        "reminderSet": false,
-        "createdAt": "2026-08-09T17:01:03.548Z"
-      },
-      {
-        "id": "1786294863563",
-        "title": "🎂 Mike Chen's birthday",
-        "date": "1995-06-17",
-        "type": "birthday",
-        "celebrantName": "Mike Chen",
-        "celebrantId": "4",
-        "reminderSet": false,
-        "createdAt": "2026-08-09T17:01:03.563Z"
-      },
-      {
-        "id": "1786294863577",
-        "title": "🎂 Test User's birthday",
-        "date": "2026-08-09",
-        "type": "birthday",
-        "celebrantName": "Test User",
-        "celebrantId": 1,
-        "reminderSet": false,
-        "createdAt": "2026-08-09T17:01:03.577Z"
-      },
-      {
-        "id": "1786294863589",
-        "title": "🎂 Emma Davis's birthday",
-        "date": "1995-06-17",
-        "type": "birthday",
-        "celebrantName": "Emma Davis",
-        "celebrantId": "5",
-        "reminderSet": false,
-        "createdAt": "2026-08-09T17:01:03.589Z"
-      },
-      {
-        "id": "1786294863680",
-        "title": "🎂 Test User's birthday",
-        "date": "2026-08-09",
-        "type": "birthday",
-        "celebrantName": "Test User",
-        "celebrantId": 1,
-        "reminderSet": false,
-        "createdAt": "2026-08-09T17:01:03.681Z"
-      }
-    ]
+    "totalFees": 1
   }
 }
