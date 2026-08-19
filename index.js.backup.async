@@ -566,52 +566,9 @@ app.get('/api/gifts', (req, res) => {
   ]);
 });
 
-app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
-  try {
-    const { giftId, giftName, amount, network, phoneNumber, recipientId, recipientName } = req.body;
-    const senderId = req.userId;
-
-    if (!giftId || !amount || !recipientId) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const amt = parseFloat(amount);
-    if (isNaN(amt) || amt <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
-    }
-
-    // Check if recipient has a wallet
-    const walletCheck = await query('SELECT id FROM wallets WHERE user_id = $1', [recipientId]);
-    if (walletCheck.rows.length === 0) {
-      await query('INSERT INTO wallets (user_id) VALUES ($1)', [recipientId]);
-    }
-
-    // Add to wallet
-    await query(
-      `UPDATE wallets 
-       SET balance = balance + $1, 
-           total_received = total_received + $1,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = $2`,
-      [amt, recipientId]
-    );
-
-    // Create gift record
-    await query(
-      `INSERT INTO gifts (sender_id, recipient_id, gift_id, gift_name, amount, network, phone_number, status, completed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed', CURRENT_TIMESTAMP)`,
-      [senderId, recipientId, giftId, giftName, amt, network || 'MTN', phoneNumber || '']
-    );
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('❌ Purchase gift error:', error);
-    res.status(500).json({ error: 'Purchase gift failed: ' + error.message });
-  }
-});
-
-// ============ BOOKMARKS ============
-app.post('/api/posts/:id/bookmark', verifyToken, async (req, res) => {
+// ============================================================
+// ✅ POST /api/gifts/purchase - Purchase a gift (WITH NOTIFICATION)
+// ============================================================
   try {
     const { id } = req.params;
     const userId = req.userId;

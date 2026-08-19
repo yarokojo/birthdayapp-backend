@@ -420,7 +420,7 @@ app.post('/api/friends/request', verifyToken, async (req, res) => {
           toUserId,
           `${sender.rows[0].name} sent you a friend request!`,
           sender.rows[0].profile_image || 'https://randomuser.me/api/portraits/men/1.jpg',
-          fromUserId,
+          null,
           sender.rows[0].name
         ]
       );
@@ -566,10 +566,19 @@ app.get('/api/gifts', (req, res) => {
   ]);
 });
 
+// ============================================================
+// POST /api/gifts/purchase - Purchase a gift (WITH BOTH NOTIFICATIONS)
+// ============================================================
 app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
   try {
     const { giftId, giftName, amount, network, phoneNumber, recipientId, recipientName } = req.body;
     const senderId = req.userId;
+
+    console.log('🎁 ===== GIFT PURCHASE REQUEST =====');
+    console.log('🎁 Sender:', senderId);
+    console.log('🎁 Recipient:', recipientId, recipientName);
+    console.log('🎁 Gift:', giftName, '₵' + amount);
+    console.log('====================================');
 
     if (!giftId || !amount || !recipientId) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -580,13 +589,22 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    // Check if recipient has a wallet
+    // ✅ Get sender info for notification
+    const senderResult = await query('SELECT name, profile_image FROM users WHERE id = $1', [senderId]);
+    const senderName = senderResult.rows[0]?.name || 'Someone';
+    const senderImage = senderResult.rows[0]?.profile_image || null;
+
+    // ✅ Get recipient info
+    const recipientResult = await query('SELECT name, profile_image FROM users WHERE id = $1', [recipientId]);
+    const recipientImage = recipientResult.rows[0]?.profile_image || null;
+
+    // ✅ Check if recipient has a wallet
     const walletCheck = await query('SELECT id FROM wallets WHERE user_id = $1', [recipientId]);
     if (walletCheck.rows.length === 0) {
       await query('INSERT INTO wallets (user_id) VALUES ($1)', [recipientId]);
     }
 
-    // Add to wallet
+    // ✅ Add to recipient's wallet
     await query(
       `UPDATE wallets 
        SET balance = balance + $1, 
@@ -596,17 +614,80 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
       [amt, recipientId]
     );
 
-    // Create gift record
+    // ✅ Create gift record
     await query(
       `INSERT INTO gifts (sender_id, recipient_id, gift_id, gift_name, amount, network, phone_number, status, completed_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed', CURRENT_TIMESTAMP)`,
       [senderId, recipientId, giftId, giftName, amt, network || 'MTN', phoneNumber || '']
     );
 
-    res.json({ success: true });
+    console.log(`✅ Gift record created`);
+
+    // ✅ Create transaction for recipient
+    await query(
+      `INSERT INTO transactions (user_id, type, amount, description, status, completed_at)
+       VALUES ($1, 'gift_received', $2, $3, 'completed', CURRENT_TIMESTAMP)`,
+      [recipientId, amt, `Gift received: ${giftName} from ${senderName}`]
+    );
+
+    // ✅ Create transaction for sender
+    await query(
+      `INSERT INTO transactions (user_id, type, amount, description, status, completed_at)
+       VALUES ($1, 'gift_sent', $2, $3, 'completed', CURRENT_TIMESTAMP)`,
+      [senderId, amt, `Gift sent: ${giftName} to ${recipientName}`]
+    );
+
+    // ✅ ✅ ✅ NOTIFICATION FOR RECIPIENT (Gift Received) ✅ ✅ ✅
+    const recipientNotif = await query(
+      `INSERT INTO notifications (user_id, type, title, message, image_url, target_id, target_name, extra_data, created_at, is_read)
+       VALUES ($1, 'gift', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, false)
+       RETURNING id`,
+      [
+        recipientId,
+        `🎁 ${giftName} Received!`,
+        `${senderName} sent you ${giftName} worth ₵${amt}! 🎉`,
+        senderImage,
+        null,  // ✅ target_id = NULL (avoids integer/string errors)
+        senderName,
+        JSON.stringify({ senderName, giftName, amount: amt })
+      ]
+    );
+
+    console.log(`✅ Recipient notification created (ID: ${recipientNotif.rows[0]?.id})`);
+
+    // ✅ ✅ ✅ NOTIFICATION FOR SENDER (Gift Sent) ✅ ✅ ✅
+    const senderNotif = await query(
+      `INSERT INTO notifications (user_id, type, title, message, image_url, target_id, target_name, extra_data, created_at, is_read)
+       VALUES ($1, 'gift_sent', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, false)
+       RETURNING id`,
+      [
+        senderId,
+        `🎁 ${giftName} Sent!`,
+        `You sent ${giftName} worth ₵${amt} to ${recipientName}! 🎉`,
+        recipientImage,
+        null,  // ✅ target_id = NULL (avoids integer/string errors)
+        recipientName,
+        JSON.stringify({ recipientName, giftName, amount: amt })
+      ]
+    );
+
+    console.log(`✅ Sender notification created (ID: ${senderNotif.rows[0]?.id})`);
+
+    res.json({ 
+      success: true, 
+      message: `Gift sent successfully to ${recipientName}`,
+      recipientId: recipientId,
+      recipientName: recipientName,
+      amount: amt,
+      giftName: giftName,
+      recipientNotificationId: recipientNotif.rows[0]?.id,
+      senderNotificationId: senderNotif.rows[0]?.id
+    });
+
   } catch (error) {
-    console.error('❌ Purchase gift error:', error);
-    res.status(500).json({ error: 'Purchase gift failed: ' + error.message });
+    console.error("❌ Purchase gift error:", error);
+    console.error("❌ Error stack:", error.stack);
+    res.status(500).json({ error: "Failed to purchase gift: " + error.message });
   }
 });
 
@@ -702,18 +783,85 @@ app.post('/api/notifications', verifyToken, async (req, res) => {
 });
 
 app.put('/api/notifications/:id/read', verifyToken, async (req, res) => {
-  await query('UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
-  res.json({ success: true });
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    console.log(`📨 Marking notification ${id} as read for user ${userId}`);
+
+    const result = await query(
+      'UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    res.json({ success: true, notification: result.rows[0] });
+  } catch (error) {
+    console.error('❌ Mark read error:', error);
+    res.status(500).json({ error: 'Failed to mark notification as read' });
+  }
 });
 
 app.put('/api/notifications/read-all', verifyToken, async (req, res) => {
-  await query('UPDATE notifications SET is_read = true WHERE user_id = $1', [req.userId]);
-  res.json({ success: true });
+  try {
+    const userId = req.userId;
+
+    console.log(`📨 Marking all notifications as read for user ${userId}`);
+
+    await query(
+      'UPDATE notifications SET is_read = true WHERE user_id = $1',
+      [userId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Mark all read error:', error);
+    res.status(500).json({ error: 'Failed to mark all as read' });
+  }
 });
 
 app.delete('/api/notifications/:id', verifyToken, async (req, res) => {
-  await query('DELETE FROM notifications WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
-  res.json({ success: true });
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    console.log(`🗑️ Deleting notification ${id} for user ${userId}`);
+
+    const result = await query(
+      'DELETE FROM notifications WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Delete notification error:', error);
+    res.status(500).json({ error: 'Failed to delete notification' });
+  }
+});
+
+app.delete('/api/notifications/clear-all', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    console.log(`🗑️ Clearing all notifications for user ${userId}`);
+
+    await query(
+      'DELETE FROM notifications WHERE user_id = $1',
+      [userId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Clear notifications error:', error);
+    res.status(500).json({ error: 'Failed to clear notifications' });
+  }
 });
 
 // ============ WALLET ============
@@ -759,15 +907,10 @@ app.post('/api/wallet/withdraw', verifyToken, async (req, res) => {
   }
 });
 
-// ============ SERVER START ============
-app.listen(PORT, "0.0.0.0", () => {
-// ============================================================
-// GET /api/follows - Get users the current user follows
-// ============================================================
+// ============ FOLLOWS ============
 app.get('/api/follows', verifyToken, async (req, res) => {
   try {
     const userId = req.userId;
-    
     const result = await query(
       `SELECT u.id, u.name, u.username, u.profile_image
        FROM follows f
@@ -776,7 +919,6 @@ app.get('/api/follows', verifyToken, async (req, res) => {
        ORDER BY u.name ASC`,
       [userId]
     );
-    
     res.json({ following: result.rows });
   } catch (error) {
     console.error('❌ Get follows error:', error);
@@ -784,7 +926,6 @@ app.get('/api/follows', verifyToken, async (req, res) => {
   }
 });
 
-// POST /api/follows/:userId - Follow a user
 app.post('/api/follows/:userId', verifyToken, async (req, res) => {
   try {
     const followerId = req.userId;
@@ -794,7 +935,6 @@ app.post('/api/follows/:userId', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Cannot follow yourself' });
     }
     
-    // Check if already following
     const existing = await query(
       'SELECT id FROM follows WHERE follower_id = $1 AND following_id = $2',
       [followerId, followingId]
@@ -816,7 +956,6 @@ app.post('/api/follows/:userId', verifyToken, async (req, res) => {
   }
 });
 
-// DELETE /api/follows/:userId - Unfollow a user
 app.delete('/api/follows/:userId', verifyToken, async (req, res) => {
   try {
     const followerId = req.userId;
@@ -833,12 +972,10 @@ app.delete('/api/follows/:userId', verifyToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to unfollow user' });
   }
 });
-// ============================================================
-// GET /api/banners - Get all banners
-// ============================================================
+
+// ============ BANNERS ============
 app.get('/api/banners', async (req, res) => {
   try {
-    // Try to get from database
     const result = await query(
       `SELECT id, title, subtitle, icon, colors, active, priority, views_count, clicks_count, created_at
        FROM banners 
@@ -864,7 +1001,6 @@ app.get('/api/banners', async (req, res) => {
       });
     }
 
-    // Fallback banners
     res.json({
       success: true,
       banners: [
@@ -874,8 +1010,6 @@ app.get('/api/banners', async (req, res) => {
           subtitle: 'Check out today\'s events!',
           icon: '🎂',
           colors: ['#6366f1', '#8b5cf6', '#a855f7'],
-          type: 'celebrations',
-          link: 'today',
           active: true,
           priority: 1,
           views: 0,
@@ -888,8 +1022,6 @@ app.get('/api/banners', async (req, res) => {
           subtitle: 'Send a gift to someone special',
           icon: '🎁',
           colors: ['#ec4899', '#f472b6', '#f9a8d4'],
-          type: 'gifts',
-          link: 'gift_shop',
           active: true,
           priority: 2,
           views: 0,
@@ -932,35 +1064,134 @@ app.get('/api/banners', async (req, res) => {
   }
 });
 
-// POST /api/banners/:id/view - Track banner view
 app.post('/api/banners/:id/view', async (req, res) => {
   try {
     const { id } = req.params;
-    // Try to update view count in database
-    await query(
-      'UPDATE banners SET views_count = views_count + 1 WHERE id = $1',
-      [id]
-    ).catch(() => {});
+    await query('UPDATE banners SET views_count = views_count + 1 WHERE id = $1', [id]).catch(() => {});
     res.json({ success: true });
   } catch (error) {
     res.json({ success: true });
   }
 });
 
-// POST /api/banners/:id/click - Track banner click
 app.post('/api/banners/:id/click', async (req, res) => {
   try {
     const { id } = req.params;
-    await query(
-      'UPDATE banners SET clicks_count = clicks_count + 1 WHERE id = $1',
-      [id]
-    ).catch(() => {});
+    await query('UPDATE banners SET clicks_count = clicks_count + 1 WHERE id = $1', [id]).catch(() => {});
     res.json({ success: true });
   } catch (error) {
     res.json({ success: true });
   }
 });
+
+// ============ SERVER START ============
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`✅ PostgreSQL connected`);
   console.log(`📝 All routes loaded`);
+});
+
+// ============================================================
+// LEADERBOARD ROUTES
+// ============================================================
+
+// GET /api/leaderboard - Get leaderboard
+app.get('/api/leaderboard', verifyToken, async (req, res) => {
+  try {
+    const { timeframe } = req.query;
+    console.log(`📊 Getting leaderboard (timeframe: ${timeframe || 'all'})`);
+    
+    // Build the query based on timeframe
+    let timeFilter = '';
+    if (timeframe === 'week') {
+      timeFilter = "AND p.created_at > NOW() - INTERVAL '7 days'";
+    } else if (timeframe === 'month') {
+      timeFilter = "AND p.created_at > NOW() - INTERVAL '30 days'";
+    }
+    
+    // Query to get user scores
+    const result = await query(`
+      SELECT 
+        u.id, 
+        u.name, 
+        u.username, 
+        u.profile_image,
+        COUNT(DISTINCT p.id) as post_count,
+        COUNT(DISTINCT l.id) as like_count,
+        COUNT(DISTINCT c.id) as comment_count,
+        COUNT(DISTINCT g.id) as gift_count,
+        (COUNT(DISTINCT p.id) * 5 + 
+         COUNT(DISTINCT l.id) * 2 + 
+         COUNT(DISTINCT c.id) * 3 + 
+         COUNT(DISTINCT g.id) * 10) as score
+      FROM users u
+      LEFT JOIN posts p ON p.user_id = u.id ${timeFilter ? 'AND ' + timeFilter.replace('AND ', '') : ''}
+      LEFT JOIN post_likes l ON l.user_id = u.id
+      LEFT JOIN comments c ON c.user_id = u.id
+      LEFT JOIN gifts g ON g.recipient_id = u.id
+      WHERE u.is_active = true
+      GROUP BY u.id
+      ORDER BY score DESC
+      LIMIT 20
+    `);
+    
+    const users = result.rows.map((user, index) => ({
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      profileImage: user.profile_image || 'https://randomuser.me/api/portraits/men/1.jpg',
+      score: parseInt(user.score) || 0,
+      posts: parseInt(user.post_count) || 0,
+      likes: parseInt(user.like_count) || 0,
+      comments: parseInt(user.comment_count) || 0,
+      gifts: parseInt(user.gift_count) || 0,
+      rank: index + 1
+    }));
+    
+    console.log(`📊 Leaderboard: ${users.length} users ranked`);
+    res.json({ users });
+    
+  } catch (error) {
+    console.error('❌ Leaderboard error:', error);
+    // Return fallback data if query fails
+    const fallbackUsers = [
+      { 
+        id: 1, 
+        name: '🌟 Star User', 
+        username: 'staruser', 
+        profileImage: 'https://randomuser.me/api/portraits/women/1.jpg', 
+        score: 450, 
+        rank: 1, 
+        posts: 15, 
+        likes: 120, 
+        comments: 45,
+        gifts: 8
+      },
+      { 
+        id: 2, 
+        name: '🎉 Party King', 
+        username: 'partyking', 
+        profileImage: 'https://randomuser.me/api/portraits/men/2.jpg', 
+        score: 380, 
+        rank: 2, 
+        posts: 12, 
+        likes: 95, 
+        comments: 38,
+        gifts: 5
+      },
+      { 
+        id: 3, 
+        name: '💝 Gift Master', 
+        username: 'giftmaster', 
+        profileImage: 'https://randomuser.me/api/portraits/women/3.jpg', 
+        score: 320, 
+        rank: 3, 
+        posts: 8, 
+        likes: 75, 
+        comments: 30,
+        gifts: 12
+      },
+    ];
+    res.json({ users: fallbackUsers });
+  }
 });

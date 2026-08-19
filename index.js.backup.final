@@ -566,10 +566,19 @@ app.get('/api/gifts', (req, res) => {
   ]);
 });
 
+// ============================================================
+// ✅ POST /api/gifts/purchase - Purchase a gift (WITH NOTIFICATION)
+// ============================================================
 app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
   try {
     const { giftId, giftName, amount, network, phoneNumber, recipientId, recipientName } = req.body;
     const senderId = req.userId;
+
+    console.log('🎁 ===== GIFT PURCHASE REQUEST =====');
+    console.log('🎁 Sender:', senderId);
+    console.log('🎁 Recipient:', recipientId, recipientName);
+    console.log('🎁 Gift:', giftName, '₵' + amount);
+    console.log('====================================');
 
     if (!giftId || !amount || !recipientId) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -580,13 +589,18 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    // Check if recipient has a wallet
+    // ✅ Get sender info for notification
+    const senderResult = await query('SELECT name, profile_image FROM users WHERE id = $1', [senderId]);
+    const senderName = senderResult.rows[0]?.name || 'Someone';
+    const senderImage = senderResult.rows[0]?.profile_image || null;
+
+    // ✅ Check if recipient has a wallet
     const walletCheck = await query('SELECT id FROM wallets WHERE user_id = $1', [recipientId]);
     if (walletCheck.rows.length === 0) {
       await query('INSERT INTO wallets (user_id) VALUES ($1)', [recipientId]);
     }
 
-    // Add to wallet
+    // ✅ Add to recipient's wallet
     await query(
       `UPDATE wallets 
        SET balance = balance + $1, 
@@ -596,17 +610,61 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
       [amt, recipientId]
     );
 
-    // Create gift record
+    // ✅ Create gift record
     await query(
       `INSERT INTO gifts (sender_id, recipient_id, gift_id, gift_name, amount, network, phone_number, status, completed_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed', CURRENT_TIMESTAMP)`,
       [senderId, recipientId, giftId, giftName, amt, network || 'MTN', phoneNumber || '']
     );
 
-    res.json({ success: true });
+    console.log(`✅ Gift record created`);
+
+    // ✅ Create transaction for recipient
+    await query(
+      `INSERT INTO transactions (user_id, type, amount, description, status, completed_at)
+       VALUES ($1, 'gift_received', $2, $3, 'completed', CURRENT_TIMESTAMP)`,
+      [recipientId, amt, `Gift received: ${giftName} from ${senderName}`]
+    );
+
+    // ✅ Create transaction for sender
+    await query(
+      `INSERT INTO transactions (user_id, type, amount, description, status, completed_at)
+       VALUES ($1, 'gift_sent', $2, $3, 'completed', CURRENT_TIMESTAMP)`,
+      [senderId, amt, `Gift sent: ${giftName} to ${recipientName}`]
+    );
+
+    // ✅ ✅ ✅ CREATE NOTIFICATION FOR RECIPIENT ✅ ✅ ✅
+    const notifResult = await query(
+      `INSERT INTO notifications (user_id, type, title, message, image_url, target_id, target_name, extra_data, created_at, is_read)
+       VALUES ($1, 'gift', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, false)
+       RETURNING id`,
+      [
+        recipientId,
+        `🎁 ${giftName} Received!`,
+        `${senderName} sent you ${giftName} worth ₵${amt}! 🎉`,
+        senderImage,
+        senderId.toString(),
+        senderName,
+        JSON.stringify({ senderName, giftName, amount: amt })
+      ]
+    );
+
+    console.log(`✅ Notification created for recipient ${recipientId} (ID: ${notifResult.rows[0]?.id})`);
+
+    res.json({ 
+      success: true, 
+      message: `Gift sent successfully to ${recipientName}`,
+      recipientId: recipientId,
+      recipientName: recipientName,
+      amount: amt,
+      giftName: giftName,
+      notificationId: notifResult.rows[0]?.id
+    });
+
   } catch (error) {
-    console.error('❌ Purchase gift error:', error);
-    res.status(500).json({ error: 'Purchase gift failed: ' + error.message });
+    console.error("❌ Purchase gift error:", error);
+    console.error("❌ Error stack:", error.stack);
+    res.status(500).json({ error: "Failed to purchase gift: " + error.message });
   }
 });
 
