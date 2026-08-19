@@ -1,0 +1,814 @@
+const express = require("express");
+const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const multer = require("multer");
+const { query } = require('./database');
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key_here';
+
+app.use(cors());
+app.use(express.json());
+
+// ============ UPLOADS DIRECTORY ============
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// ============ VERIFY TOKEN ============
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.userId = decoded.userId;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+// ============ VIDEO UPLOAD ============
+const videoStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, 'uploads/'),
+  filename: (req, file, cb) => {
+    cb(null, 'video-' + Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
+  }
+});
+
+const videoUpload = multer({
+  storage: videoStorage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files are allowed'), false);
+    }
+  }
+});
+
+app.use('/uploads', express.static('uploads'));
+app.post('/api/upload/video', videoUpload.single('video'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No video file uploaded' });
+    const videoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    res.json({ success: true, videoUrl });
+  } catch (error) {
+    res.status(500).json({ error: 'Video upload failed' });
+  }
+});
+
+// ============ PROFILE IMAGE UPLOAD ============
+
+// ============ HEALTH ============
+app.get("/health", (req, res) => res.json({ status: "OK", timestamp: new Date().toISOString() }));
+app.get("/", (req, res) => res.json({ message: "BirthdayApp API is running!" }));
+
+// ============ AUTH ============
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { email, password, name, username, birthDate, phone, network } = req.body;
+    const existing = await query('SELECT id FROM users WHERE email = $1 OR username = $2', [email.toLowerCase(), username.toLowerCase()]);
+    if (existing.rows.length > 0) return res.status(400).json({ error: 'User already exists' });
+    
+    const hashed = await bcrypt.hash(password, 10);
+    const result = await query(
+      `INSERT INTO users (email, password_hash, name, username, birth_date, phone, network)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, name, username, birth_date, profile_image`,
+      [email.toLowerCase(), hashed, name, username.toLowerCase(), birthDate, phone || '', network || 'MTN']
+    );
+    const user = result.rows[0];
+    await query('INSERT INTO wallets (user_id) VALUES ($1)', [user.id]);
+    await query('INSERT INTO user_settings (user_id) VALUES ($1)', [user.id]);
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({ token, user });
+  } catch (error) {
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const result = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+    const user = result.rows[0];
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    delete user.password_hash;
+    res.json({ token, user });
+  } catch (error) {
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.post('/api/auth/change-password', verifyToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const result = await query('SELECT password_hash FROM users WHERE id = $1', [req.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const valid = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashed, req.userId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+// ============ USERS ============
+app.get('/api/users', verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT id, name, username, profile_image, bio, location, birth_date, phone, network FROM users WHERE is_active = true ORDER BY name ASC LIMIT 50');
+    res.json(result.rows);
+  } catch (error) {
+    res.json([]);
+  }
+});
+
+app.get('/api/users/profile', verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT id, name, username, email, bio, location, profile_image, phone, network, birth_date, created_at FROM users WHERE id = $1', [req.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get profile' });
+  }
+});
+
+    values.push(req.userId);
+    const result = await query(`UPDATE users SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${i} RETURNING *`, values);
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// ============ POSTS ============
+app.get("/api/posts", async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT p.*, u.name as author_name, u.username as author_handle, u.profile_image as author_image, u.phone, u.network
+      FROM posts p LEFT JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC
+    `);
+    const posts = [];
+    for (const row of result.rows) {
+      const comments = await query('SELECT * FROM comments WHERE post_id = $1 ORDER BY created_at ASC', [row.id]);
+      posts.push({
+        ...row, commentList: comments.rows,
+        likes: parseInt(row.likes_count) || 0,
+        comments: parseInt(row.comments_count) || 0
+      });
+    }
+    res.json(posts);
+  } catch (error) {
+    res.status(500).json([]);
+  }
+});
+
+app.post("/api/posts", verifyToken, async (req, res) => {
+  try {
+    const { content, image, video, location, celebrationType, celebrantName, isBirthday, music, hashtags, birthdaySongId, birthdaySongUrl, birthdaySongName } = req.body;
+    const result = await query(
+      `INSERT INTO posts (user_id, content, image, video, location, celebration_type, celebrant_name, is_birthday, music, hashtags, birthday_song_id, birthday_song_url, birthday_song_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+      [req.userId, content || "", image || null, video || null, location || null, celebrationType || "general", celebrantName || "", isBirthday || false, music || null, hashtags || [], birthdaySongId || null, birthdaySongUrl || null, birthdaySongName || null]
+    );
+    const user = await query('SELECT name, username, profile_image, phone, network FROM users WHERE id = $1', [req.userId]);
+    res.status(201).json({ ...result.rows[0], authorName: user.rows[0]?.name, authorHandle: user.rows[0]?.username, authorImage: user.rows[0]?.profile_image, phone: user.rows[0]?.phone || '', network: user.rows[0]?.network || 'MTN' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create post' });
+  }
+});
+
+app.delete("/api/posts/:id", verifyToken, async (req, res) => {
+  await query('DELETE FROM posts WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  res.json({ success: true });
+});
+
+app.post("/api/posts/:id/like", verifyToken, async (req, res) => {
+  const existing = await query('SELECT id FROM post_likes WHERE post_id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  if (existing.rows.length === 0) {
+    await query('INSERT INTO post_likes (post_id, user_id) VALUES ($1, $2)', [req.params.id, req.userId]);
+    await query('UPDATE posts SET likes_count = likes_count + 1 WHERE id = $1', [req.params.id]);
+  }
+  res.json({ success: true });
+});
+
+app.delete("/api/posts/:id/like", verifyToken, async (req, res) => {
+  await query('DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  await query('UPDATE posts SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1', [req.params.id]);
+  res.json({ success: true });
+});
+
+// ============ COMMENTS ============
+app.post("/api/posts/:postId/comments", verifyToken, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { text } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: 'Comment text is required' });
+    const user = await query('SELECT name, profile_image FROM users WHERE id = $1', [req.userId]);
+    const result = await query(
+      `INSERT INTO comments (post_id, user_id, text, user_name, user_avatar) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [postId, req.userId, text.trim(), user.rows[0]?.name, user.rows[0]?.profile_image]
+    );
+    await query('UPDATE posts SET comments_count = comments_count + 1 WHERE id = $1', [postId]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+app.put("/api/posts/:postId/comments/:commentId", verifyToken, async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const { text } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: 'Comment text is required' });
+    const check = await query('SELECT user_id FROM comments WHERE id = $1 AND post_id = $2', [commentId, postId]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Comment not found' });
+    if (check.rows[0].user_id !== req.userId) return res.status(403).json({ error: 'Not authorized' });
+    const result = await query('UPDATE comments SET text = $1 WHERE id = $2 RETURNING *', [text.trim(), commentId]);
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to edit comment' });
+  }
+});
+
+app.delete("/api/posts/:postId/comments/:commentId", verifyToken, async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const check = await query('SELECT user_id FROM comments WHERE id = $1 AND post_id = $2', [commentId, postId]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Comment not found' });
+    if (check.rows[0].user_id !== req.userId) return res.status(403).json({ error: 'Not authorized' });
+    await query('DELETE FROM comments WHERE id = $1', [commentId]);
+    await query('UPDATE posts SET comments_count = GREATEST(comments_count - 1, 0) WHERE id = $1', [postId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete comment' });
+  }
+});
+
+// ============ NOTIFICATIONS ============
+app.get("/api/notifications", verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50', [req.userId]);
+    const unread = await query('SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = false', [req.userId]);
+    res.json({ notifications: result.rows, unreadCount: parseInt(unread.rows[0]?.count || 0) });
+  } catch (error) {
+    res.json({ notifications: [], unreadCount: 0 });
+  }
+});
+
+app.put("/api/notifications/read-all", verifyToken, async (req, res) => {
+  await query('UPDATE notifications SET is_read = true WHERE user_id = $1', [req.userId]);
+  res.json({ success: true });
+});
+
+app.put("/api/notifications/:id/read", verifyToken, async (req, res) => {
+  await query('UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  res.json({ success: true });
+});
+
+app.delete("/api/notifications/:id", verifyToken, async (req, res) => {
+  await query('DELETE FROM notifications WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  res.json({ success: true });
+});
+
+app.post('/api/notifications', verifyToken, async (req, res) => {
+  try {
+    const { userId, type, title, message, imageUrl, targetId, targetName, extraData } = req.body;
+    if (!userId || !type || !message) return res.status(400).json({ error: 'userId, type, and message are required' });
+    const result = await query(
+      `INSERT INTO notifications (user_id, type, title, message, image_url, target_id, target_name, extra_data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [userId, type, title || type, message, imageUrl || null, targetId || null, targetName || null, extraData || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create notification' });
+  }
+});
+
+// ============ WALLET ============
+app.get("/api/wallet/balance", verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT balance, total_received, total_sent, total_withdrawn, total_fees_paid FROM wallets WHERE user_id = $1', [req.userId]);
+    if (result.rows.length === 0) {
+      await query('INSERT INTO wallets (user_id) VALUES ($1)', [req.userId]);
+      return res.json({ balance: 0, total_received: 0, total_sent: 0, total_withdrawn: 0, total_fees_paid: 0 });
+    }
+    const w = result.rows[0];
+    res.json({ balance: parseFloat(w.balance) || 0, total_received: parseFloat(w.total_received) || 0, total_sent: parseFloat(w.total_sent) || 0, total_withdrawn: parseFloat(w.total_withdrawn) || 0, total_fees_paid: parseFloat(w.total_fees_paid) || 0 });
+  } catch (error) {
+    res.json({ balance: 0 });
+  }
+});
+
+app.get("/api/wallet/transactions", verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50', [req.userId]);
+    res.json({ transactions: result.rows });
+  } catch (error) {
+    res.json({ transactions: [] });
+  }
+});
+
+app.post("/api/wallet/withdraw", verifyToken, async (req, res) => {
+  try {
+    const { amount, network, phoneNumber } = req.body;
+    if (!amount || amount < 10) return res.status(400).json({ error: 'Minimum withdrawal is ₵10' });
+    const wallet = await query('SELECT balance FROM wallets WHERE user_id = $1', [req.userId]);
+    if (wallet.rows.length === 0) return res.status(400).json({ error: 'Wallet not found' });
+    const balance = parseFloat(wallet.rows[0].balance) || 0;
+    const amt = parseFloat(amount);
+    const fee = amt * 0.01;
+    const total = amt + fee;
+    if (balance < total) return res.status(400).json({ error: 'Insufficient balance' });
+    const newBalance = balance - total;
+    await query('UPDATE wallets SET balance = $1, total_withdrawn = total_withdrawn + $2, total_fees_paid = total_fees_paid + $3 WHERE user_id = $4', [newBalance, amt, fee, req.userId]);
+    await query(`INSERT INTO transactions (user_id, type, amount, fee, balance_before, balance_after, description, status, network, phone_number, completed_at)
+      VALUES ($1, 'withdrawal', $2, $3, $4, $5, $6, 'completed', $7, $8, CURRENT_TIMESTAMP)`,
+      [req.userId, amt, fee, balance, newBalance, `Withdrawal to ${network}`, network, phoneNumber]);
+    res.json({ success: true, newBalance, fee, userReceives: amt - fee });
+  } catch (error) {
+    res.status(500).json({ error: 'Withdrawal failed' });
+  }
+});
+
+app.post("/api/wallet/add-gift", verifyToken, async (req, res) => {
+  try {
+    const { celebrantId, giftName, giftAmount, fromName, isAnonymous } = req.body;
+    const amount = parseFloat(giftAmount);
+    if (!celebrantId || !amount || !giftName) return res.status(400).json({ error: 'Missing required fields' });
+    await query('UPDATE wallets SET balance = balance + $1, total_received = total_received + $1 WHERE user_id = $2', [amount, celebrantId]);
+    const sender = isAnonymous ? 'Anonymous' : (fromName || 'Someone');
+    await query(`INSERT INTO transactions (user_id, type, amount, description, status, completed_at)
+      VALUES ($1, 'gift_received', $2, $3, 'completed', CURRENT_TIMESTAMP)`,
+      [celebrantId, amount, `Gift received: ${giftName} from ${sender}`]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add gift' });
+  }
+});
+
+// ============ FRIENDS ============
+app.get("/api/friends/list", verifyToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT u.id, u.name, u.username, u.profile_image, u.birth_date, u.phone, u.network
+       FROM friends f JOIN users u ON u.id = f.friend_id WHERE f.user_id = $1 ORDER BY u.name ASC`,
+      [req.userId]
+    );
+    res.json({ friends: result.rows });
+  } catch (error) {
+    res.json({ friends: [] });
+  }
+});
+
+app.get("/api/friends/list/:userId", verifyToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT u.id, u.name, u.username, u.profile_image, u.birth_date, u.phone, u.network
+       FROM friends f JOIN users u ON u.id = f.friend_id WHERE f.user_id = $1 ORDER BY u.name ASC`,
+      [req.params.userId]
+    );
+    res.json({ friends: result.rows });
+  } catch (error) {
+    res.json({ friends: [] });
+  }
+});
+
+app.get("/api/friends/requests", verifyToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT fr.*, u.name, u.username, u.profile_image
+       FROM friend_requests fr JOIN users u ON u.id = fr.from_user_id
+       WHERE fr.to_user_id = $1 AND fr.status = 'pending' ORDER BY fr.created_at DESC`,
+      [req.userId]
+    );
+    res.json({ requests: result.rows });
+  } catch (error) {
+    res.json({ requests: [] });
+  }
+});
+
+app.get("/api/friends/birthdays", verifyToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT u.id, u.name, u.username, u.profile_image, u.birth_date, u.phone, u.network
+       FROM friends f JOIN users u ON u.id = f.friend_id
+       WHERE f.user_id = $1 AND u.birth_date IS NOT NULL
+       ORDER BY EXTRACT(MONTH FROM u.birth_date), EXTRACT(DAY FROM u.birth_date)`,
+      [req.userId]
+    );
+    res.json({ friendsBirthdays: result.rows });
+  } catch (error) {
+    res.json({ friendsBirthdays: [] });
+  }
+});
+
+app.post("/api/friends/request", verifyToken, async (req, res) => {
+  try {
+    const { toUserId } = req.body;
+    if (req.userId === parseInt(toUserId)) return res.status(400).json({ error: 'Cannot add yourself' });
+    const existing = await query('SELECT id FROM friends WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)', [req.userId, toUserId]);
+    if (existing.rows.length > 0) return res.status(400).json({ error: 'Already friends' });
+    const pending = await query('SELECT id FROM friend_requests WHERE from_user_id = $1 AND to_user_id = $2 AND status = $3', [req.userId, toUserId, 'pending']);
+    if (pending.rows.length > 0) return res.status(400).json({ error: 'Request already sent' });
+    await query('INSERT INTO friend_requests (from_user_id, to_user_id) VALUES ($1, $2)', [req.userId, toUserId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to send friend request' });
+  }
+});
+
+app.post("/api/friends/accept", verifyToken, async (req, res) => {
+  try {
+    const { requestId } = req.body;
+    const result = await query(
+      `UPDATE friend_requests SET status = 'accepted' WHERE id = $1 AND to_user_id = $2 RETURNING from_user_id, to_user_id`,
+      [requestId, req.userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Request not found' });
+    const { from_user_id, to_user_id } = result.rows[0];
+    await query('INSERT INTO friends (user_id, friend_id) VALUES ($1, $2), ($2, $1)', [from_user_id, to_user_id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to accept friend request' });
+  }
+});
+
+app.post("/api/friends/decline", verifyToken, async (req, res) => {
+  try {
+    const { requestId } = req.body;
+    await query('UPDATE friend_requests SET status = $1 WHERE id = $2 AND to_user_id = $3', ['declined', requestId, req.userId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to decline friend request' });
+  }
+});
+
+app.delete("/api/friends/:friendId", verifyToken, async (req, res) => {
+  try {
+    await query('DELETE FROM friends WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)', [req.userId, req.params.friendId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to remove friend' });
+  }
+});
+
+// ============ BANNERS ============
+app.get("/api/banners", (req, res) => {
+  res.json({
+    success: true,
+    banners: [
+      { id: 'b1', title: '🎉 Welcome to BirthdayApp!', subtitle: 'Celebrate every moment', icon: '🎂', colors: ['#6366f1', '#8b5cf6', '#a855f7'], type: 'celebrations', link: 'today', active: true, priority: 1 },
+      { id: 'b2', title: '🎁 Gift Shop', subtitle: 'Send a gift to someone special', icon: '🎁', colors: ['#ec4899', '#f472b6', '#f9a8d4'], type: 'gifts', link: 'gift_shop', active: true, priority: 2 }
+    ]
+  });
+});
+
+app.post("/api/banners/:id/view", (req, res) => res.json({ success: true }));
+app.post("/api/banners/:id/click", (req, res) => res.json({ success: true }));
+
+// ============ GIFTS ============
+app.get("/api/gifts", (req, res) => {
+  res.json([
+    { id: 'g1', name: 'Gold Bar', price: 100, category: 'Luxury', icon: '🥇', isPopular: true },
+    { id: 'g2', name: 'Diamond Ring', price: 150, category: 'Luxury', icon: '💍', isPopular: true },
+    { id: 'g3', name: 'Celebration Cake', price: 50, category: 'Food', icon: '🎂', isNew: true },
+    { id: 'g4', name: 'Fresh Flowers', price: 40, category: 'Flowers', icon: '🌹' },
+    { id: 'g5', name: 'Premium Champagne', price: 20, category: 'Drinks', icon: '🍾' },
+    { id: 'g6', name: 'Gift Card', price: 10, category: 'Cash', icon: '💳' },
+    { id: 'g7', name: 'Teddy Bear', price: 25, category: 'Toys', icon: '🧸' },
+    { id: 'g8', name: 'Chocolate Box', price: 15, category: 'Food', icon: '🍫' }
+  ]);
+});
+
+app.post("/api/gifts/purchase", verifyToken, async (req, res) => {
+  try {
+    const { giftId, giftName, amount, network, phoneNumber, recipientId, recipientName } = req.body;
+    if (!giftId || !amount || !recipientId) return res.status(400).json({ error: 'Missing required fields' });
+    const amt = parseFloat(amount);
+    await query('UPDATE wallets SET balance = balance + $1, total_received = total_received + $1 WHERE user_id = $2', [amt, recipientId]);
+    const sender = await query('SELECT name FROM users WHERE id = $1', [req.userId]);
+    await query(`INSERT INTO gifts (sender_id, recipient_id, gift_id, gift_name, amount, network, phone_number, status, completed_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed', CURRENT_TIMESTAMP)`,
+      [req.userId, recipientId, giftId, giftName, amt, network || 'MTN', phoneNumber || '']);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to purchase gift' });
+  }
+});
+
+// ============ CALENDAR ============
+app.get('/api/calendar/events/me', verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT * FROM calendar_events WHERE user_id = $1 ORDER BY date ASC', [req.userId]);
+    res.json({ events: result.rows });
+  } catch (error) {
+    res.json({ events: [] });
+  }
+});
+
+app.post('/api/calendar/events', verifyToken, async (req, res) => {
+  try {
+    const { title, date, type, celebrantName, celebrantId, reminderSet } = req.body;
+    const result = await query(
+      `INSERT INTO calendar_events (user_id, title, date, type, celebrant_name, celebrant_id, reminder_set)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [req.userId, title, date, type || 'birthday', celebrantName, celebrantId, reminderSet || false]
+    );
+    res.status(201).json({ event: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create event' });
+  }
+});
+
+app.delete('/api/calendar/events/:id', verifyToken, async (req, res) => {
+  await query('DELETE FROM calendar_events WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  res.json({ success: true });
+});
+
+app.put('/api/calendar/events/:id/reminder', verifyToken, async (req, res) => {
+  const result = await query(
+    `UPDATE calendar_events SET reminder_set = NOT reminder_set WHERE id = $1 AND user_id = $2 RETURNING *`,
+    [req.params.id, req.userId]
+  );
+  res.json({ event: result.rows[0] });
+});
+
+// ============ LEADERBOARD ============
+app.get("/api/leaderboard", verifyToken, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT u.id, u.name, u.username, u.profile_image,
+      COUNT(DISTINCT p.id) as post_count,
+      COUNT(DISTINCT l.id) as like_count,
+      COUNT(DISTINCT c.id) as comment_count,
+      (COUNT(DISTINCT p.id) * 10 + COUNT(DISTINCT l.id) * 2 + COUNT(DISTINCT c.id) * 5) as score
+      FROM users u
+      LEFT JOIN posts p ON p.user_id = u.id
+      LEFT JOIN post_likes l ON l.user_id = u.id
+      LEFT JOIN comments c ON c.user_id = u.id
+      WHERE u.is_active = true
+      GROUP BY u.id
+      ORDER BY score DESC
+      LIMIT 20
+    `);
+    const users = result.rows.map((u, i) => ({
+      id: u.id, name: u.name, username: u.username,
+      profileImage: u.profile_image || 'https://randomuser.me/api/portraits/men/1.jpg',
+      score: parseInt(u.score) || 0,
+      posts: parseInt(u.post_count) || 0,
+      likes: parseInt(u.like_count) || 0,
+      comments: parseInt(u.comment_count) || 0,
+      rank: i + 1
+    }));
+    res.json({ users });
+  } catch (error) {
+    res.json({ users: [] });
+  }
+});
+
+// ============ STORIES ============
+app.get('/api/stories', verifyToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT s.*, u.name as user_name, u.username, u.profile_image as user_avatar
+       FROM stories s JOIN users u ON u.id = s.user_id
+       WHERE s.expires_at > NOW() ORDER BY s.created_at DESC LIMIT 50`,
+      [req.userId]
+    );
+    res.json({ stories: result.rows });
+  } catch (error) {
+    res.json({ stories: [] });
+  }
+});
+
+app.post('/api/stories', verifyToken, async (req, res) => {
+  try {
+    const { contentUrl, isVideo, caption, privacy } = req.body;
+    if (!contentUrl) return res.status(400).json({ error: 'Content URL is required' });
+    const result = await query(
+      `INSERT INTO stories (user_id, content_url, is_video, caption, privacy, expires_at)
+       VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '24 hours') RETURNING *`,
+      [req.userId, contentUrl, isVideo || false, caption || '', privacy || 'friends']
+    );
+    res.status(201).json({ story: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create story' });
+  }
+});
+
+app.delete('/api/stories/:id', verifyToken, async (req, res) => {
+  await query('DELETE FROM stories WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  res.json({ success: true });
+});
+
+app.post('/api/stories/:id/like', verifyToken, async (req, res) => {
+  await query('UPDATE stories SET likes_count = likes_count + 1 WHERE id = $1', [req.params.id]);
+  res.json({ success: true });
+});
+
+app.delete('/api/stories/:id/like', verifyToken, async (req, res) => {
+  await query('UPDATE stories SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1', [req.params.id]);
+  res.json({ success: true });
+});
+
+// ============ START SERVER ============
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`✅ PostgreSQL connected`);
+  console.log(`📝 All routes loaded: auth, posts, comments, friends, notifications, wallet, banners, gifts, calendar, leaderboard, stories`);
+});
+
+// ============ UPDATE PROFILE (FIXED WITH DEBUG) ============
+    }
+    
+    values.push(userId);
+    const queryStr = `
+      UPDATE users 
+      SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = $${paramCount}
+      RETURNING id, name, username, email, bio, location, profile_image, phone, network, birth_date
+    `;
+    
+    console.log('📝 SQL:', queryStr);
+    console.log('📝 Values:', values);
+    
+    const result = await query(queryStr, values);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    console.log('✅ Profile updated successfully');
+    console.log('📦 Response:', result.rows[0]);
+    console.log('========================================');
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('❌ Update profile error:', error);
+    console.error('❌ Stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to update profile',
+      details: error.message 
+    });
+  }
+});
+
+// ============ PROFILE IMAGE UPLOAD (FIXED) ============
+
+// ============ PROFILE IMAGE UPLOAD (CLEAN) ============
+const profileDir = path.join(__dirname, 'uploads/profiles');
+if (!fs.existsSync(profileDir)) {
+  fs.mkdirSync(profileDir, { recursive: true });
+  console.log('📁 Created profiles directory');
+}
+
+const profStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, profileDir);
+  },
+  filename: (req, file, cb) => {
+    const userId = req.userId;
+    const ext = path.extname(file.originalname);
+    const filename = `profile_${userId}_${Date.now()}${ext}`;
+    cb(null, filename);
+  }
+});
+
+const profUpload = multer({
+  storage: profStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
+
+app.post('/api/users/profile/image', verifyToken, profUpload.single('profileImage'), async (req, res) => {
+  try {
+    console.log('📸 Profile image upload request received');
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file uploaded' });
+    }
+    
+    const userId = req.userId;
+    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/profiles/${req.file.filename}`;
+    
+    console.log(`✅ Profile image uploaded for user ${userId}: ${imageUrl}`);
+    
+    const result = await query(
+      `UPDATE users SET profile_image = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
+       RETURNING id, name, username, email, profile_image, bio, location, phone, network, birth_date`,
+      [imageUrl, userId]
+    );
+    
+    res.json({ 
+      success: true, 
+      imageUrl: imageUrl,
+      user: result.rows[0],
+      message: 'Profile image updated successfully'
+    });
+  } catch (error) {
+    console.error('❌ Profile image upload error:', error);
+    res.status(500).json({ error: 'Failed to upload profile image' });
+  }
+});
+
+app.use('/uploads/profiles', express.static(path.join(__dirname, 'uploads/profiles')));
+
+// ============ UPDATE PROFILE (CLEAN) ============
+app.put("/api/users/profile", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    console.log('📝 Updating profile for user:', userId);
+    console.log('📦 Body:', req.body);
+    
+    const { name, username, bio, location, profile_image, phone, network, birth_date } = req.body;
+    
+    const updates = [];
+    const values = [];
+    let i = 1;
+    
+    if (name !== undefined && name !== null) {
+      updates.push(`name = $${i++}`);
+      values.push(name);
+    }
+    if (username !== undefined && username !== null) {
+      updates.push(`username = $${i++}`);
+      values.push(username.toLowerCase());
+    }
+    if (bio !== undefined && bio !== null) {
+      updates.push(`bio = $${i++}`);
+      values.push(bio);
+    }
+    if (location !== undefined && location !== null) {
+      updates.push(`location = $${i++}`);
+      values.push(location);
+    }
+    if (profile_image !== undefined && profile_image !== null) {
+      updates.push(`profile_image = $${i++}`);
+      values.push(profile_image);
+    }
+    if (phone !== undefined && phone !== null) {
+      updates.push(`phone = $${i++}`);
+      values.push(phone);
+    }
+    if (network !== undefined && network !== null) {
+      updates.push(`network = $${i++}`);
+      values.push(network);
+    }
+    if (birth_date !== undefined && birth_date !== null) {
+      updates.push(`birth_date = $${i++}`);
+      values.push(birth_date);
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+    
+    values.push(userId);
+    const queryStr = `
+      UPDATE users 
+      SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = $${i}
+      RETURNING id, name, username, email, bio, location, profile_image, phone, network, birth_date
+    `;
+    
+    console.log('📝 SQL:', queryStr);
+    console.log('📝 Values:', values);
+    
+    const result = await query(queryStr, values);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    console.log('✅ Profile updated successfully');
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('❌ Update profile error:', error);
+    res.status(500).json({ 
+      error: 'Failed to update profile',
+      details: error.message 
+    });
+  }
+});

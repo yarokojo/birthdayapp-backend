@@ -5,1680 +5,962 @@ const path = require("path");
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const multer = require("multer");
+const { query } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
-// ✅ Consistent JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
 
 app.use(cors());
 app.use(express.json());
 
-// ============ DATA STORAGE ============
-const DATA_FILE = path.join(__dirname, 'data.json');
-
-let data = {
-  users: [],
-  wallets: {},
-  companyFees: [],
-  giftTransactions: [],
-  notifications: [],
-  groupGifts: [],
-  friendRequests: [],
-  friendships: [],
-  follows: [],
-  posts: [],
-  postLikes: [],
-  bookmarks: [],
-  videoPositions: [],
-  seenStories: [],
-  reminders: [],
-  banners: [],
-  userSettings: {},
-  blockedUsers: {},
-  calendarEvents: {},
-  stories: [],
-  liveStreams: [],
-  companyAccount: {
-    name: 'MeolCompany',
-    accountNumber: '0596270302',
-    network: 'MTN',
-    totalFees: 0
-  }
-};
-
-try {
-  if (fs.existsSync(DATA_FILE)) {
-    const saved = fs.readFileSync(DATA_FILE, 'utf8');
-    data = JSON.parse(saved);
-    console.log(`📂 Loaded data: ${data.users.length} users, ${data.posts.length} posts`);
-    if (!data.bookmarks) data.bookmarks = [];
-    if (!data.companyFees) data.companyFees = [];
-  }
-} catch (err) {
-  console.log("📂 Starting fresh data");
-}
-
-function saveData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
-
-// ============ CREATE UPLOADS DIRECTORY ============
+// ============ UPLOADS ============
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+const profilesDir = path.join(__dirname, 'uploads/profiles');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fs.existsSync(profilesDir)) fs.mkdirSync(profilesDir, { recursive: true });
 
-// ============ VIDEO UPLOAD ============
-const videoStorage = multer.diskStorage({
+const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, file.fieldname === 'profileImage' ? profilesDir : uploadsDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'video-' + uniqueSuffix + path.extname(file.originalname));
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + unique + path.extname(file.originalname));
   }
 });
 
-const videoUpload = multer({
-  storage: videoStorage,
-  limits: { fileSize: 100 * 1024 * 1024 },
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('video/')) {
-      cb(null, true);
+    if (file.fieldname === 'profileImage') {
+      cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype));
     } else {
-      cb(new Error('Only video files are allowed'), false);
+      cb(null, file.mimetype.startsWith('video/'));
     }
   }
 });
 
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(uploadsDir));
 
-app.post('/api/upload/video', videoUpload.single('video'), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No video file uploaded' });
-    }
-    const videoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-    console.log('🎬 Video uploaded:', videoUrl);
-    res.json({ success: true, videoUrl });
-  } catch (error) {
-    console.error('❌ Video upload error:', error);
-    res.status(500).json({ error: 'Video upload failed' });
-  }
-});
-
-// ============ HELPER FUNCTIONS ============
-const getWalletBalance = (userId) => data.wallets[userId]?.balance || 0;
-
-const addToWallet = (userId, amount, giftName, fromName) => {
-  if (!data.wallets[userId]) data.wallets[userId] = { balance: 0, transactions: [], totalReceived: 0, totalWithdrawn: 0, totalFeesPaid: 0 };
-  data.wallets[userId].balance += amount;
-  data.wallets[userId].totalReceived = (data.wallets[userId].totalReceived || 0) + amount;
-  data.wallets[userId].transactions.unshift({
-    id: Date.now().toString(),
-    type: 'credit',
-    amount,
-    giftName,
-    fromName,
-    date: new Date().toISOString()
-  });
-  saveData();
-  return data.wallets[userId].balance;
-};
-
-const addNotification = (userId, type, title, message, imageUrl = null, targetId = null, targetName = null, extraData = {}) => {
-  console.log(`📨 Creating notification for user ${userId}: ${title}`);
-  
-  const newNotification = {
-    id: Date.now().toString(),
-    userId: parseInt(userId),
-    type,
-    title,
-    message,
-    imageUrl,
-    targetId,
-    targetName,
-    extraData,
-    isRead: false,
-    createdAt: new Date().toISOString()
-  };
-  
-  if (!data.notifications) data.notifications = [];
-  data.notifications.unshift(newNotification);
-  saveData();
-  
-  console.log(`✅ Notification created: ${newNotification.id}`);
-  return newNotification;
-};
-
-// ============ VERIFY TOKEN (DEFINED BEFORE USAGE) ============
+// ============ VERIFY TOKEN ============
 const verifyToken = (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
+  if (!token) return res.status(401).json({ error: 'No token' });
   try {
-    console.log('🔑 Verifying token...');
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.userId;
-    console.log(`✅ Token verified for user: ${req.userId}`);
     next();
-  } catch (err) {
-    console.error('❌ Invalid token:', err.message);
+  } catch (e) {
     return res.status(401).json({ error: 'Invalid token' });
   }
 };
 
-// ============ PROFILE IMAGE UPLOAD (MOVED AFTER verifyToken) ============
-const profilesDir = path.join(__dirname, 'uploads/profiles');
-if (!fs.existsSync(profilesDir)) {
-  fs.mkdirSync(profilesDir, { recursive: true });
-  console.log('📁 Created profiles directory');
-}
+// ============ HEALTH ============
+app.get("/health", (req, res) => res.json({ status: "OK" }));
+app.get("/", (req, res) => res.json({ message: "BirthdayApp API" }));
 
-const profileImageStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, profilesDir);
-  },
-  filename: (req, file, cb) => {
-    const userId = req.userId;
-    const ext = path.extname(file.originalname);
-    const filename = `profile_${userId}_${Date.now()}${ext}`;
-    cb(null, filename);
-  }
-});
-
-const profileImageUpload = multer({
-  storage: profileImageStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'), false);
-    }
-  }
-});
-
-app.post('/api/users/profile/image', verifyToken, profileImageUpload.single('profileImage'), (req, res) => {
-  try {
-    console.log('📸 Profile image upload request received');
-    
-    if (!req.file) {
-      return res.status(400).json({ error: 'No image file uploaded' });
-    }
-    
-    const userId = req.userId;
-    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/profiles/${req.file.filename}`;
-    
-    console.log(`✅ Profile image uploaded for user ${userId}: ${imageUrl}`);
-    
-    const userIndex = data.users.findIndex(u => u.id === userId);
-    if (userIndex !== -1) {
-      data.users[userIndex].profileImage = imageUrl;
-      saveData();
-      console.log(`✅ User ${userId} profile image updated in database`);
-    }
-    
-    res.json({ 
-      success: true, 
-      imageUrl: imageUrl,
-      message: 'Profile image updated successfully'
-    });
-  } catch (error) {
-    console.error('❌ Profile image upload error:', error);
-    res.status(500).json({ error: 'Failed to upload profile image' });
-  }
-});
-
-app.use('/uploads/profiles', express.static(path.join(__dirname, 'uploads/profiles')));
-
-// ============ HEALTH CHECK ============
-app.get("/health", (req, res) => {
-  res.json({ status: "OK", timestamp: new Date().toISOString() });
-});
-
-app.get("/", (req, res) => {
-  res.json({ message: "BirthdayApp API is running!" });
-});
-
-// ============ AUTH ENDPOINTS ============
+// ============ AUTH ============
 app.post("/api/auth/register", async (req, res) => {
-  const { email, password, name, username, birthDate } = req.body;
-  const normalizedEmail = email.toLowerCase();
-  
-  if (data.users.find(u => u.email === normalizedEmail)) {
-    return res.status(400).json({ error: "User already exists" });
-  }
-  if (!birthDate) {
-    return res.status(400).json({ error: 'Birth date is required' });
-  }
-  
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const { email, password, name, username, birthDate, phone, network } = req.body;
     
-    const newUser = { 
-      id: data.users.length + 1, 
-      email: normalizedEmail, 
-      name, 
-      username,
-      birthDate: birthDate || null,
-      phone: req.body.phone || '',
-      network: req.body.network || '',
-      password_hash: hashedPassword,
-      profileImage: 'https://randomuser.me/api/portraits/men/1.jpg',
-      bio: '',
-      location: '',
-      created_at: new Date().toISOString() 
-    };
-    data.users.push(newUser);
+    const exists = await query('SELECT id FROM users WHERE email = $1 OR username = $2', [email.toLowerCase(), username.toLowerCase()]);
+    if (exists.rows.length) return res.status(400).json({ error: 'User already exists' });
     
-    data.wallets[newUser.id] = { balance: 0, transactions: [], totalReceived: 0, totalWithdrawn: 0, totalFeesPaid: 0 };
-    data.userSettings[newUser.id] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' },
-      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
-      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
-    };
-    data.blockedUsers[newUser.id] = [];
-    data.calendarEvents[newUser.id] = [];
-    saveData();
-    
-    const token = jwt.sign(
-      { userId: newUser.id, email: newUser.email },
-      JWT_SECRET,
-      { expiresIn: '7d' }
+    const hash = await bcrypt.hash(password, 10);
+    const result = await query(
+      `INSERT INTO users (email, password_hash, name, username, birth_date, phone, network)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) 
+       RETURNING id, email, name, username, birth_date, profile_image`,
+      [email.toLowerCase(), hash, name, username.toLowerCase(), birthDate || null, phone || '', network || 'MTN']
     );
+    const user = result.rows[0];
     
-    res.json({ token, user: { id: newUser.id, email: newUser.email, name, username, birthDate: newUser.birthDate } });
+    await query('INSERT INTO wallets (user_id) VALUES ($1)', [user.id]);
+    await query('INSERT INTO user_settings (user_id) VALUES ($1)', [user.id]);
+    
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({ token, user });
   } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Failed to register user' });
+    console.error('Register error:', error);
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  const { email, password } = req.body;
-  const normalizedEmail = email.toLowerCase();
-  const user = data.users.find(u => u.email === normalizedEmail);
-  
-  if (!user) {
-    return res.status(401).json({ error: "Invalid credentials" });
-  }
-  
   try {
-    const isValid = await bcrypt.compare(password, user.password_hash);
-    if (!isValid) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-    
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-    
-    res.json({ token, user: { id: user.id, email: user.email, name: user.name, username: user.username, birthDate: user.birthDate } });
-  } catch (error) {
-    console.error('Login error:', error);
+    const { email, password } = req.body;
+    const result = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (!result.rows.length) return res.status(401).json({ error: 'Invalid credentials' });
+    const user = result.rows[0];
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    delete user.password_hash;
+    res.json({ token, user });
+  } catch (e) {
     res.status(500).json({ error: 'Login failed' });
   }
 });
 
 app.post('/api/auth/change-password', verifyToken, async (req, res) => {
   try {
-    const userId = req.userId;
     const { currentPassword, newPassword } = req.body;
-    
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Current and new password required' });
-    }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'New password must be at least 6 characters' });
-    }
-    
-    const user = data.users.find(u => u.id === userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    const isValid = await bcrypt.compare(currentPassword, user.password_hash);
-    if (!isValid) {
-      return res.status(401).json({ error: 'Current password is incorrect' });
-    }
-    
+    const result = await query('SELECT password_hash FROM users WHERE id = $1', [req.userId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'User not found' });
+    const isValid = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+    if (!isValid) return res.status(401).json({ error: 'Current password is incorrect' });
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password_hash = hashedPassword;
-    saveData();
-    
-    res.json({ success: true, message: 'Password changed successfully' });
+    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, req.userId]);
+    res.json({ success: true });
   } catch (error) {
-    console.error('❌ Password change error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Failed to change password' });
   }
 });
 
-// ============ USER ENDPOINTS ============
-app.get('/api/users', verifyToken, (req, res) => {
-  const userId = req.userId;
-  console.log(`👥 GET /api/users for user ${userId}`);
-  
-  const allUsers = data.users.map(user => ({
-    id: user.id,
-    name: user.name,
-    username: user.username,
-    email: user.email,
-    profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    bio: user.bio || '',
-    location: user.location || '',
-    phone: user.phone || '',
-    network: user.network || 'MTN',
-    birthDate: user.birthDate || null,
-  }));
-  
-  res.json(allUsers);
-});
-
-app.get('/api/users/profile', verifyToken, (req, res) => {
-  const user = data.users.find(u => u.id === req.userId);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+// ============ PROFILE ============
+app.get('/api/users/profile', verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT id, name, username, email, bio, location, profile_image, phone, network, birth_date, created_at FROM users WHERE id = $1', [req.userId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'User not found' });
+    res.json(result.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get profile' });
   }
-  res.json({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    username: user.username,
-    bio: user.bio || '',
-    location: user.location || '',
-    profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    birthDate: user.birthDate || null,
-    phone: user.phone || '',
-    network: user.network || '',
-    createdAt: user.created_at
-  });
 });
 
-app.put('/api/users/profile', verifyToken, (req, res) => {
-  const userIndex = data.users.findIndex(u => u.id === req.userId);
-  if (userIndex === -1) {
-    return res.status(404).json({ error: 'User not found' });
+app.put('/api/users/profile', verifyToken, async (req, res) => {
+  try {
+    const { name, username, bio, location, phone, network, birthDate, profileImage } = req.body;
+    const fields = [], values = [];
+    let i = 1;
+    if (name !== undefined) { fields.push(`name = $${i++}`); values.push(name); }
+    if (username !== undefined) { fields.push(`username = $${i++}`); values.push(username.toLowerCase()); }
+    if (bio !== undefined) { fields.push(`bio = $${i++}`); values.push(bio); }
+    if (location !== undefined) { fields.push(`location = $${i++}`); values.push(location); }
+    if (phone !== undefined) { fields.push(`phone = $${i++}`); values.push(phone); }
+    if (network !== undefined) { fields.push(`network = $${i++}`); values.push(network); }
+    if (birthDate !== undefined) { fields.push(`birth_date = $${i++}`); values.push(birthDate); }
+    if (profileImage !== undefined) { fields.push(`profile_image = $${i++}`); values.push(profileImage); }
+    if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
+    values.push(req.userId);
+    const result = await query(`UPDATE users SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${i} RETURNING *`, values);
+    res.json(result.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: 'Update failed' });
   }
-  
-  const { name, bio, location, username, profileImage, phone, network, birthDate } = req.body;
-  if (name !== undefined) data.users[userIndex].name = name;
-  if (bio !== undefined) data.users[userIndex].bio = bio;
-  if (location !== undefined) data.users[userIndex].location = location;
-  if (username !== undefined) data.users[userIndex].username = username;
-  if (profileImage !== undefined) data.users[userIndex].profileImage = profileImage;
-  if (phone !== undefined) data.users[userIndex].phone = phone;
-  if (network !== undefined) data.users[userIndex].network = network;
-  if (birthDate !== undefined) data.users[userIndex].birthDate = birthDate;
-  saveData();
-  
-  const updatedUser = data.users[userIndex];
-  res.json({
-    id: updatedUser.id,
-    name: updatedUser.name,
-    email: updatedUser.email,
-    username: updatedUser.username,
-    bio: updatedUser.bio || '',
-    location: updatedUser.location || '',
-    profileImage: updatedUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    birthDate: updatedUser.birthDate || null,
-    phone: updatedUser.phone || '',
-    network: updatedUser.network || '',
-    createdAt: updatedUser.created_at
-  });
 });
 
-app.get('/api/users/search', (req, res) => {
-  const { q } = req.query;
-  if (!q || q.length === 0) {
-    return res.json([]);
+app.post('/api/users/profile/image', verifyToken, upload.single('profileImage'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
+    const imageUrl = `http://localhost:5000/uploads/profiles/${req.file.filename}`;
+    await query('UPDATE users SET profile_image = $1 WHERE id = $2', [imageUrl, req.userId]);
+    const result = await query('SELECT * FROM users WHERE id = $1', [req.userId]);
+    res.json({ success: true, imageUrl, user: result.rows[0] });
+  } catch (e) {
+    res.status(500).json({ error: 'Upload failed' });
   }
-  const searchTerm = q.toLowerCase().trim();
-  const results = data.users.filter(user => {
-    const nameMatch = user.name?.toLowerCase().includes(searchTerm);
-    const usernameMatch = user.username?.toLowerCase().includes(searchTerm);
-    const emailMatch = user.email?.toLowerCase().includes(searchTerm);
-    return nameMatch || usernameMatch || emailMatch;
-  });
-  res.json(results.map(user => ({
-    id: user.id,
-    name: user.name,
-    username: user.username,
-    profileImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    birthDate: user.birthDate || null,
-    phone: user.phone || '',
-    network: user.network || ''
-  })));
 });
 
-// ============ POST ENDPOINTS ============
-app.get("/api/posts", (req, res) => {
-  const allPosts = data.posts || [];
-  const enrichedPosts = allPosts.map(post => {
-    const author = data.users.find(u => u.id === post.userId);
-    return { ...post, phone: author?.phone || '', network: author?.network || 'MTN' };
-  });
-  res.json(enrichedPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-});
-
-app.post("/api/posts", verifyToken, (req, res) => {
-  const { content, image, video, location, celebrationType, celebrantName, isBirthday, music, hashtags } = req.body;
-  const user = data.users.find(u => u.id === req.userId);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+// ============ VIDEO UPLOAD ============
+app.post('/api/upload/video', verifyToken, upload.single('video'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No video uploaded' });
+    const videoUrl = `http://localhost:5000/uploads/${req.file.filename}`;
+    res.json({ success: true, videoUrl });
+  } catch (e) {
+    res.status(500).json({ error: 'Video upload failed' });
   }
-  
-  const newPost = {
-    id: Date.now().toString(),
-    userId: user.id,
-    content,
-    image: image || null,
-    video: video || null,
-    location: location || null,
-    celebrationType: celebrationType || 'general',
-    celebrantName: celebrantName || '',
-    isBirthday: isBirthday || celebrationType === 'birthday',
-    music: music || null,
-    hashtags: hashtags || [],
-    authorName: user.name,
-    authorHandle: user.username,
-    authorImage: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    phone: user.phone || '',
-    network: user.network || 'MTN',
-    likes: 0,
-    comments: 0,
-    reposts: 0,
-    views: 0,
-    createdAt: new Date().toISOString(),
-    commentList: []
-  };
-  
-  if (!data.posts) data.posts = [];
-  data.posts.unshift(newPost);
-  saveData();
-  res.status(201).json(newPost);
 });
 
-app.delete("/api/posts/:id", verifyToken, (req, res) => {
-  const { id } = req.params;
-  const post = (data.posts || []).find(p => p.id === id);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  if (post.userId !== req.userId) {
-    return res.status(403).json({ error: 'Not authorized to delete this post' });
+// ============ USERS ============
+app.get('/api/users', verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT id, name, username, profile_image, bio, location, birth_date, phone, network FROM users WHERE id != $1 AND is_active = true ORDER BY name ASC LIMIT 50', [req.userId]);
+    res.json(result.rows);
+  } catch (e) {
+    res.json([]);
   }
-  const index = (data.posts || []).findIndex(p => p.id === id);
-  if (index !== -1) {
-    data.posts.splice(index, 1);
-    saveData();
-  }
-  res.json({ success: true });
 });
 
-app.post("/api/posts/:id/like", verifyToken, (req, res) => {
-  const { id } = req.params;
-  const userId = req.userId;
-  const post = (data.posts || []).find(p => p.id === id);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  
-  if (!data.postLikes) data.postLikes = [];
-  const existing = data.postLikes.find(l => l.postId === id && l.userId === userId);
-  if (!existing) {
-    data.postLikes.push({ postId: id, userId, createdAt: new Date().toISOString() });
-    post.likes = (post.likes || 0) + 1;
-    saveData();
-    if (post.userId !== userId) {
-      const user = data.users.find(u => u.id === userId);
-      addNotification(post.userId, 'like', '❤️ Post Liked', `${user?.name || 'Someone'} liked your post`);
+// ============ POSTS ============
+app.get('/api/posts', async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT p.*, p.birthday_song_id, p.birthday_song_url, p.birthday_song_name,
+             u.name as author_name, u.username as author_handle, u.profile_image as author_image, u.phone, u.network
+      FROM posts p LEFT JOIN users u ON p.user_id = u.id
+      ORDER BY p.created_at DESC
+    `);
+    
+    const posts = [];
+    for (const row of result.rows) {
+      const commentsResult = await query('SELECT * FROM comments WHERE post_id = $1 ORDER BY created_at ASC', [row.id]);
+      posts.push({
+        id: row.id,
+        userId: row.user_id,
+        content: row.content || '',
+        image: row.image,
+        video: row.video,
+        location: row.location,
+        celebrationType: row.celebration_type || 'general',
+        celebrantName: row.celebrant_name || '',
+        isBirthday: row.is_birthday || false,
+        music: row.music,
+        hashtags: row.hashtags || [],
+        birthdaySongId: row.birthday_song_id,
+        birthdaySongUrl: row.birthday_song_url,
+        birthdaySongName: row.birthday_song_name,
+        authorName: row.author_name || 'Unknown',
+        authorHandle: row.author_handle || '@user',
+        authorImage: row.author_image || 'https://randomuser.me/api/portraits/men/1.jpg',
+        phone: row.phone || '',
+        network: row.network || 'MTN',
+        likes: parseInt(row.likes_count) || 0,
+        comments: parseInt(row.comments_count) || 0,
+        views: parseInt(row.views_count) || 0,
+        createdAt: row.created_at,
+        commentList: commentsResult.rows.map(c => ({
+          id: c.id,
+          userId: c.user_id,
+          userName: c.user_name || 'Anonymous',
+          userAvatar: c.user_avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
+          text: c.text,
+          createdAt: c.created_at,
+          likes: parseInt(c.likes_count) || 0
+        }))
+      });
     }
+    res.json(posts);
+  } catch (error) {
+    console.error('Get posts error:', error);
+    res.status(500).json([]);
   }
-  res.json({ success: true, likes: post.likes });
 });
 
-app.delete("/api/posts/:id/like", verifyToken, (req, res) => {
-  const { id } = req.params;
-  const userId = req.userId;
-  const post = (data.posts || []).find(p => p.id === id);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  
-  if (data.postLikes) {
-    const index = data.postLikes.findIndex(l => l.postId === id && l.userId === userId);
-    if (index !== -1) {
-      data.postLikes.splice(index, 1);
-      post.likes = Math.max(0, (post.likes || 0) - 1);
-      saveData();
+app.post('/api/posts', verifyToken, async (req, res) => {
+  try {
+    const { content, image, video, location, celebrationType, celebrantName, isBirthday, music, hashtags, birthdaySongId, birthdaySongUrl, birthdaySongName } = req.body;
+    const result = await query(
+      `INSERT INTO posts (user_id, content, image, video, location, celebration_type, celebrant_name, is_birthday, music, hashtags, birthday_song_id, birthday_song_url, birthday_song_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+      [req.userId, content || '', image || null, video || null, location || null, celebrationType || 'general', celebrantName || '', isBirthday || false, music || null, hashtags || [], birthdaySongId || null, birthdaySongUrl || null, birthdaySongName || null]
+    );
+    const user = await query('SELECT name, username, profile_image, phone, network FROM users WHERE id = $1', [req.userId]);
+    res.status(201).json({ ...result.rows[0], authorName: user.rows[0]?.name, authorHandle: user.rows[0]?.username, authorImage: user.rows[0]?.profile_image || 'https://randomuser.me/api/portraits/men/1.jpg', phone: user.rows[0]?.phone || '', network: user.rows[0]?.network || 'MTN' });
+  } catch (e) {
+    res.status(500).json({ error: 'Create post failed' });
+  }
+});
+
+app.delete('/api/posts/:id', verifyToken, async (req, res) => {
+  await query('DELETE FROM posts WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  res.json({ success: true });
+});
+
+app.post('/api/posts/:id/like', verifyToken, async (req, res) => {
+  const existing = await query('SELECT id FROM post_likes WHERE post_id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  if (!existing.rows.length) {
+    await query('INSERT INTO post_likes (post_id, user_id) VALUES ($1, $2)', [req.params.id, req.userId]);
+    await query('UPDATE posts SET likes_count = likes_count + 1 WHERE id = $1', [req.params.id]);
+  }
+  res.json({ success: true });
+});
+
+app.delete('/api/posts/:id/like', verifyToken, async (req, res) => {
+  await query('DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  await query('UPDATE posts SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1', [req.params.id]);
+  res.json({ success: true });
+});
+
+// ============================================================
+// POST /api/posts/:postId/comments - Add a comment
+// ============================================================
+app.post("/api/posts/:postId/comments", verifyToken, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { text } = req.body;
+    const userId = req.userId;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Comment text is required" });
     }
-  }
-  res.json({ success: true, likes: post.likes });
-});
 
-// ============ BOOKMARK ENDPOINTS ============
-app.post("/api/posts/:id/bookmark", verifyToken, (req, res) => {
-  const { id } = req.params;
-  const userId = req.userId;
-  
-  if (!data.bookmarks) data.bookmarks = [];
-  
-  const existing = data.bookmarks.find(b => b.postId === id && b.userId === userId);
-  if (existing) {
-    return res.json({ success: true, message: 'Already bookmarked' });
-  }
-  
-  data.bookmarks.push({ 
-    postId: id, 
-    userId, 
-    createdAt: new Date().toISOString() 
-  });
-  saveData();
-  
-  console.log(`📌 Bookmark added: post ${id} by user ${userId}`);
-  res.json({ success: true });
-});
-
-app.delete("/api/posts/:id/bookmark", verifyToken, (req, res) => {
-  const { id } = req.params;
-  const userId = req.userId;
-  
-  if (data.bookmarks) {
-    const index = data.bookmarks.findIndex(b => b.postId === id && b.userId === userId);
-    if (index !== -1) {
-      data.bookmarks.splice(index, 1);
-      saveData();
-      console.log(`📌 Bookmark removed: post ${id} by user ${userId}`);
+    const postCheck = await query('SELECT id FROM posts WHERE id = $1', [postId]);
+    if (postCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Post not found" });
     }
+
+    const userResult = await query("SELECT id, name, profile_image FROM users WHERE id = $1", [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+
+    const result = await query(
+      `INSERT INTO comments (post_id, user_id, text, user_name, user_avatar)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, post_id, user_id, text, user_name, user_avatar, created_at`,
+      [postId, userId, text.trim(), user.name, user.profile_image]
+    );
+
+    await query("UPDATE posts SET comments_count = comments_count + 1 WHERE id = $1", [postId]);
+
+    res.status(201).json({
+      id: result.rows[0].id,
+      userId: result.rows[0].user_id,
+      userName: result.rows[0].user_name || user.name,
+      userAvatar: result.rows[0].user_avatar || user.profile_image || "https://randomuser.me/api/portraits/men/1.jpg",
+      text: result.rows[0].text,
+      createdAt: result.rows[0].created_at,
+      likes: 0
+    });
+  } catch (error) {
+    console.error("❌ Add comment error:", error);
+    res.status(500).json({ error: "Failed to add comment: " + error.message });
   }
-  
-  res.json({ success: true });
 });
 
-app.get("/api/posts/bookmarks", verifyToken, (req, res) => {
-  const userId = req.userId;
-  
-  if (!data.bookmarks) data.bookmarks = [];
-  
-  const bookmarkedIds = data.bookmarks
-    .filter(b => b.userId === userId)
-    .map(b => b.postId);
-  
-  const bookmarkedPosts = (data.posts || [])
-    .filter(p => bookmarkedIds.includes(p.id))
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  
-  res.json({ success: true, posts: bookmarkedPosts });
-});
+// ============================================================
+// GET /api/friends/requests - Get pending friend requests
+// ============================================================
+app.get('/api/friends/requests', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    console.log(`👋 Getting friend requests for user: ${userId}`);
 
-// ============ COMMENT ENDPOINTS ============
-app.post("/api/posts/:id/comments", verifyToken, (req, res) => {
-  const { id } = req.params;
-  const { text } = req.body;
-  const userId = req.userId;
-  const post = (data.posts || []).find(p => p.id === id);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  
-  const user = data.users.find(u => u.id === userId);
-  const newComment = {
-    id: Date.now().toString(),
-    userId,
-    userName: user?.name || 'Anonymous',
-    userAvatar: user?.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    text,
-    createdAt: new Date().toISOString(),
-    likes: 0
-  };
-  if (!post.commentList) post.commentList = [];
-  post.commentList.push(newComment);
-  post.comments = (post.comments || 0) + 1;
-  saveData();
-  
-  if (post.userId !== userId) {
-    addNotification(post.userId, 'comment', '💬 New Comment', `${user?.name || 'Someone'} commented on your post`);
+    const result = await query(
+      `SELECT fr.*, u.name, u.username, u.profile_image 
+       FROM friend_requests fr 
+       JOIN users u ON u.id = fr.from_user_id 
+       WHERE fr.to_user_id = $1 AND fr.status = 'pending' 
+       ORDER BY fr.created_at DESC`,
+      [userId]
+    );
+
+    console.log(`✅ Found ${result.rows.length} pending requests`);
+    res.json({ requests: result.rows });
+  } catch (error) {
+    console.error("❌ Get friend requests error:", error);
+    res.json({ requests: [] });
   }
-  res.status(201).json(newComment);
 });
 
-app.put("/api/posts/:postId/comments/:commentId", verifyToken, (req, res) => {
-  const { postId, commentId } = req.params;
-  const { text } = req.body;
-  const userId = req.userId;
-  
-  const post = (data.posts || []).find(p => p.id === postId);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  
-  const index = post.commentList?.findIndex(c => c.id === commentId);
-  if (index === -1 || index === undefined) {
-    return res.status(404).json({ error: "Comment not found" });
+// ============================================================
+// GET /api/friends/birthdays - Get friends birthdays
+// ============================================================
+app.get('/api/friends/birthdays', verifyToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT u.id, u.name, u.username, u.profile_image, u.birth_date, u.phone, u.network 
+       FROM friends f 
+       JOIN users u ON u.id = f.friend_id 
+       WHERE f.user_id = $1 AND u.birth_date IS NOT NULL 
+       ORDER BY EXTRACT(MONTH FROM u.birth_date), EXTRACT(DAY FROM u.birth_date)`,
+      [req.userId]
+    );
+    res.json({ friendsBirthdays: result.rows });
+  } catch (error) {
+    console.error("❌ Get birthdays error:", error);
+    res.json({ friendsBirthdays: [] });
   }
-  
-  const comment = post.commentList[index];
-  if (comment.userId !== userId && post.userId !== userId) {
-    return res.status(403).json({ error: 'Not authorized' });
+});
+
+// ============================================================
+// POST /api/friends/request - Send friend request
+// ============================================================
+app.post('/api/friends/request', verifyToken, async (req, res) => {
+  try {
+    const { toUserId } = req.body;
+    const fromUserId = req.userId;
+
+    console.log(`📤 Friend request from ${fromUserId} to ${toUserId}`);
+
+    if (fromUserId === parseInt(toUserId)) {
+      return res.status(400).json({ error: 'Cannot add yourself' });
+    }
+
+    const existing = await query(
+      `SELECT id FROM friends WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)`,
+      [fromUserId, toUserId]
+    );
+    if (existing.rows.length) {
+      return res.status(400).json({ error: 'Already friends' });
+    }
+
+    const pending = await query(
+      `SELECT id FROM friend_requests WHERE from_user_id = $1 AND to_user_id = $2 AND status = 'pending'`,
+      [fromUserId, toUserId]
+    );
+    if (pending.rows.length) {
+      return res.status(400).json({ error: 'Request already sent' });
+    }
+
+    await query(
+      `INSERT INTO friend_requests (from_user_id, to_user_id, status, created_at)
+       VALUES ($1, $2, 'pending', CURRENT_TIMESTAMP)`,
+      [fromUserId, toUserId]
+    );
+
+    // ✅ Send notification to recipient
+    const sender = await query(
+      `SELECT name, profile_image FROM users WHERE id = $1`,
+      [fromUserId]
+    );
+
+    if (sender.rows.length > 0) {
+      await query(
+        `INSERT INTO notifications (user_id, type, title, message, image_url, target_id, target_name, created_at)
+         VALUES ($1, 'friend_request', '👋 Friend Request', $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+        [
+          toUserId,
+          `${sender.rows[0].name} sent you a friend request!`,
+          sender.rows[0].profile_image || 'https://randomuser.me/api/portraits/men/1.jpg',
+          fromUserId,
+          sender.rows[0].name
+        ]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Send request error:', error);
+    res.status(500).json({ error: 'Failed to send friend request' });
   }
-  
-  comment.text = text;
-  saveData();
-  res.json({ success: true, comment });
 });
 
-app.delete("/api/posts/:postId/comments/:commentId", verifyToken, (req, res) => {
-  const { postId, commentId } = req.params;
-  const userId = req.userId;
-  const post = (data.posts || []).find(p => p.id === postId);
-  if (!post) return res.status(404).json({ error: "Post not found" });
-  
-  const index = post.commentList?.findIndex(c => c.id === commentId);
-  if (index === -1 || index === undefined) {
-    return res.status(404).json({ error: "Comment not found" });
+// ============================================================
+// POST /api/friends/accept - Accept friend request
+// ============================================================
+app.post('/api/friends/accept', verifyToken, async (req, res) => {
+  try {
+    const { requestId } = req.body;
+    const userId = req.userId;
+
+    const result = await query(
+      `SELECT from_user_id, to_user_id FROM friend_requests 
+       WHERE id = $1 AND to_user_id = $2 AND status = 'pending'`,
+      [requestId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+
+    const { from_user_id, to_user_id } = result.rows[0];
+
+    await query(
+      `UPDATE friend_requests SET status = 'accepted', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [requestId]
+    );
+
+    await query(
+      `INSERT INTO friends (user_id, friend_id) VALUES ($1, $2), ($2, $1)`,
+      [from_user_id, to_user_id]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Accept request error:', error);
+    res.status(500).json({ error: 'Failed to accept friend request' });
   }
-  
-  const comment = post.commentList[index];
-  if (comment.userId !== userId && post.userId !== userId) {
-    return res.status(403).json({ error: 'Not authorized' });
+});
+
+// ============================================================
+// POST /api/friends/decline - Decline friend request
+// ============================================================
+app.post('/api/friends/decline', verifyToken, async (req, res) => {
+  try {
+    const { requestId } = req.body;
+    const userId = req.userId;
+
+    await query(
+      `UPDATE friend_requests SET status = 'declined', updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $1 AND to_user_id = $2`,
+      [requestId, userId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Decline request error:', error);
+    res.status(500).json({ error: 'Failed to decline friend request' });
   }
-  
-  post.commentList.splice(index, 1);
-  post.comments = Math.max(0, (post.comments || 0) - 1);
-  saveData();
-  res.json({ success: true });
 });
 
-// ============ FRIENDS ENDPOINTS ============
-app.get('/api/friends/list/:userId', verifyToken, (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const friendships = data.friendships.filter(f => f.userId === userId);
-  const friends = friendships
-    .map(f => {
-      const friend = data.users.find(u => u.id === f.friendId);
-      if (!friend) return null;
-      return {
-        id: friend.id,
-        name: friend.name,
-        username: friend.username,
-        profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-        birthDate: friend.birthDate || null,
-        phone: friend.phone || '',
-        network: friend.network || 'MTN'
-      };
-    })
-    .filter(Boolean);
-  res.json({ friends });
-});
-
-app.get('/api/friends/birthdays', verifyToken, (req, res) => {
-  const userId = req.userId;
-  console.log(`🎂 GET /api/friends/birthdays for user ${userId}`);
-  
-  const friendships = data.friendships.filter(f => f.userId === userId);
-  const friendIds = friendships.map(f => f.friendId);
-  
-  const friendsWithBirthdays = data.users
-    .filter(u => friendIds.includes(u.id) && u.birthDate)
-    .map(friend => ({
-      id: friend.id,
-      name: friend.name,
-      username: friend.username,
-      profileImage: friend.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-      birthDate: friend.birthDate,
-      phone: friend.phone || '',
-      network: friend.network || 'MTN',
-    }));
-  
-  res.json({ friendsBirthdays: friendsWithBirthdays });
-});
-
-app.get('/api/friends/requests', verifyToken, (req, res) => {
-  const userId = req.userId;
-  const pending = data.friendRequests.filter(r => r.toUserId === userId && r.status === 'pending');
-  const withDetails = pending.map(req => {
-    const fromUser = data.users.find(u => u.id === req.fromUserId);
-    return { ...req, fromUser: fromUser ? { id: fromUser.id, name: fromUser.name, username: fromUser.username, profileImage: fromUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg' } : null };
-  });
-  res.json({ requests: withDetails });
-});
-
-app.post('/api/friends/request', verifyToken, (req, res) => {
-  const { toUserId } = req.body;
-  const fromUserId = req.userId;
-  
-  if (!toUserId) {
-    return res.status(400).json({ error: 'User ID is required' });
+// ============================================================
+// GET /api/friends/list - Get friends list
+// ============================================================
+app.get('/api/friends/list', verifyToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT u.id, u.name, u.username, u.profile_image, u.birth_date, u.phone, u.network
+       FROM friends f
+       JOIN users u ON u.id = f.friend_id
+       WHERE f.user_id = $1
+       ORDER BY u.name ASC`,
+      [req.userId]
+    );
+    res.json({ friends: result.rows });
+  } catch (error) {
+    console.error('❌ Get friends error:', error);
+    res.json({ friends: [] });
   }
-  
-  if (fromUserId === parseInt(toUserId)) {
-    return res.status(400).json({ error: 'Cannot send request to yourself' });
+});
+
+// ============================================================
+// GET /api/friends/list/:userId - Get friends for specific user
+// ============================================================
+app.get('/api/friends/list/:userId', verifyToken, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const result = await query(
+      `SELECT u.id, u.name, u.username, u.profile_image, u.birth_date, u.phone, u.network
+       FROM friends f
+       JOIN users u ON u.id = f.friend_id
+       WHERE f.user_id = $1
+       ORDER BY u.name ASC`,
+      [userId]
+    );
+    res.json({ friends: result.rows });
+  } catch (error) {
+    console.error('❌ Get friends error:', error);
+    res.json({ friends: [] });
   }
-  
-  const targetUser = data.users.find(u => u.id === parseInt(toUserId));
-  if (!targetUser) {
-    return res.status(404).json({ error: 'User not found' });
+});
+
+// ============================================================
+// DELETE /api/friends/:friendId - Remove friend
+// ============================================================
+app.delete('/api/friends/:friendId', verifyToken, async (req, res) => {
+  try {
+    const { friendId } = req.params;
+    const userId = req.userId;
+
+    await query(
+      `DELETE FROM friends WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)`,
+      [userId, friendId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Remove friend error:', error);
+    res.status(500).json({ error: 'Failed to remove friend' });
   }
-  
-  const alreadyFriends = data.friendships.some(f => 
-    (f.userId === fromUserId && f.friendId === parseInt(toUserId)) ||
-    (f.userId === parseInt(toUserId) && f.friendId === fromUserId)
-  );
-  if (alreadyFriends) {
-    return res.status(400).json({ error: 'Already friends' });
-  }
-  
-  const existing = data.friendRequests.find(r => 
-    (r.fromUserId === fromUserId && r.toUserId === parseInt(toUserId) && r.status === 'pending') ||
-    (r.fromUserId === parseInt(toUserId) && r.toUserId === fromUserId && r.status === 'pending')
-  );
-  if (existing) {
-    return res.status(400).json({ error: 'Request already sent or pending' });
-  }
-  
-  const newRequest = {
-    id: Date.now().toString(),
-    fromUserId: fromUserId,
-    toUserId: parseInt(toUserId),
-    status: 'pending',
-    createdAt: new Date().toISOString()
-  };
-  
-  data.friendRequests.push(newRequest);
-  saveData();
-  
-  const fromUser = data.users.find(u => u.id === fromUserId);
-  if (fromUser) {
-    addNotification(parseInt(toUserId), 'friend_request', '👋 Friend Request', `${fromUser.name} sent you a friend request!`, fromUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg', fromUserId, fromUser.name);
-  }
-  
-  res.json({ success: true, request: newRequest });
-});
-
-app.post('/api/friends/accept', verifyToken, (req, res) => {
-  const { requestId } = req.body;
-  const userId = req.userId;
-  const request = data.friendRequests.find(r => r.id === requestId);
-  if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.toUserId !== userId) return res.status(403).json({ error: 'Not authorized' });
-  if (request.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
-  
-  request.status = 'accepted';
-  data.friendships.push({ id: Date.now().toString(), userId: request.fromUserId, friendId: request.toUserId, createdAt: new Date().toISOString() });
-  data.friendships.push({ id: (Date.now() + 1).toString(), userId: request.toUserId, friendId: request.fromUserId, createdAt: new Date().toISOString() });
-  saveData();
-  
-  const toUser = data.users.find(u => u.id === request.toUserId);
-  if (toUser) {
-    addNotification(request.fromUserId, 'friend_accept', '✅ Friend Request Accepted', `${toUser.name} accepted your friend request!`, toUser.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg', request.toUserId, toUser.name);
-  }
-  res.json({ success: true });
-});
-
-app.post('/api/friends/decline', verifyToken, (req, res) => {
-  const { requestId } = req.body;
-  const userId = req.userId;
-  const request = data.friendRequests.find(r => r.id === requestId);
-  if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.toUserId !== userId) return res.status(403).json({ error: 'Not authorized' });
-  request.status = 'declined';
-  saveData();
-  res.json({ success: true });
-});
-
-app.delete('/api/friends/:friendId', verifyToken, (req, res) => {
-  const friendId = parseInt(req.params.friendId);
-  const userId = req.userId;
-  const index1 = data.friendships.findIndex(f => f.userId === userId && f.friendId === friendId);
-  const index2 = data.friendships.findIndex(f => f.userId === friendId && f.friendId === userId);
-  if (index1 !== -1) data.friendships.splice(index1, 1);
-  if (index2 !== -1) data.friendships.splice(index2, 1);
-  saveData();
-  res.json({ success: true });
-});
-
-// ============ NOTIFICATIONS ============
-app.get("/api/notifications", verifyToken, (req, res) => {
-  const userId = req.userId;
-  console.log(`📨 GET /api/notifications for user ${userId}`);
-  
-  const userNotifications = (data.notifications || [])
-    .filter(n => n.userId === userId)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  
-  const unreadCount = userNotifications.filter(n => !n.isRead).length;
-  
-  res.json({
-    notifications: userNotifications,
-    unreadCount: unreadCount
-  });
-});
-
-app.put("/api/notifications/read-all", verifyToken, (req, res) => {
-  const userId = req.userId;
-  console.log(`📨 PUT /api/notifications/read-all for user ${userId}`);
-  
-  (data.notifications || [])
-    .filter(n => n.userId === userId && !n.isRead)
-    .forEach(n => n.isRead = true);
-  
-  saveData();
-  res.json({ success: true });
-});
-
-app.get("/api/notifications/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const userNotifications = (data.notifications || []).filter(n => n.userId === userId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const unreadCount = userNotifications.filter(n => !n.isRead).length;
-  res.json({ notifications: userNotifications, unreadCount });
-});
-
-app.put("/api/notifications/:id/read", (req, res) => {
-  const { id } = req.params;
-  const notification = data.notifications.find(n => n.id === id);
-  if (!notification) return res.status(404).json({ error: "Notification not found" });
-  notification.isRead = true;
-  saveData();
-  res.json({ success: true });
-});
-
-app.put("/api/notifications/read-all/:userId", (req, res) => {
-  const userId = parseInt(req.params.userId);
-  data.notifications.filter(n => n.userId === userId && !n.isRead).forEach(n => n.isRead = true);
-  saveData();
-  res.json({ success: true });
-});
-
-app.delete("/api/notifications/:id", (req, res) => {
-  const { id } = req.params;
-  const index = data.notifications.findIndex(n => n.id === id);
-  if (index === -1) return res.status(404).json({ error: "Notification not found" });
-  data.notifications.splice(index, 1);
-  saveData();
-  res.json({ success: true });
-});
-
-// ============ GROUP GIFT ROUTES ============
-app.get("/api/group-gifts", (req, res) => {
-  res.json(data.groupGifts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-});
-
-app.post("/api/group-gifts", verifyToken, (req, res) => {
-  const { giftName, celebrantName, targetAmount, deadline, imageUrl } = req.body;
-  const newGroupGift = {
-    id: Date.now().toString(),
-    giftName,
-    celebrantName,
-    celebrantId: `celebrant_${Date.now()}`,
-    targetAmount: parseFloat(targetAmount),
-    currentAmount: 0,
-    contributorsCount: 0,
-    deadline: deadline || "No deadline",
-    imageUrl: imageUrl || "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=300&fit=crop",
-    status: 'active',
-    contributors: [],
-    createdAt: new Date().toISOString()
-  };
-  data.groupGifts.unshift(newGroupGift);
-  saveData();
-  res.status(201).json(newGroupGift);
-});
-
-app.post("/api/group-gifts/:id/contribute", verifyToken, (req, res) => {
-  const { id } = req.params;
-  const { amount, userName } = req.body;
-  const gift = data.groupGifts.find(g => g.id === id);
-  if (!gift) return res.status(404).json({ error: "Group gift not found" });
-  if (gift.status !== 'active') return res.status(400).json({ error: "Group gift not active" });
-  
-  const contributionAmount = parseFloat(amount);
-  const newTotal = gift.currentAmount + contributionAmount;
-  if (newTotal > gift.targetAmount) return res.status(400).json({ error: "Contribution exceeds target" });
-  
-  gift.contributors.push({ userId: req.userId, userName: userName || "Anonymous", amount: contributionAmount, date: new Date().toISOString() });
-  gift.contributorsCount += 1;
-  gift.currentAmount = newTotal;
-  if (gift.currentAmount >= gift.targetAmount) {
-    gift.status = 'completed';
-    gift.completedAt = new Date().toISOString();
-  }
-  saveData();
-  res.json({ success: true, isComplete: gift.status === 'completed', currentAmount: gift.currentAmount, targetAmount: gift.targetAmount });
 });
 
 // ============ GIFTS ============
-app.get("/api/gifts", (req, res) => {
+app.get('/api/gifts', (req, res) => {
   res.json([
-    { id: 1, name: "Gold Bar", price: 100, category: "Luxury", icon: "🥇" },
-    { id: 2, name: "Diamond Ring", price: 150, category: "Luxury", icon: "💍" },
-    { id: 3, name: "Celebration Cake", price: 50, category: "Food", icon: "🎂" },
-    { id: 4, name: "Fresh Flowers", price: 40, category: "Flowers", icon: "🌹" },
-    { id: 5, name: "Premium Drink", price: 20, category: "Drinks", icon: "🍾" }
+    { id: 'g1', name: 'Gold Bar', price: 100, category: 'Luxury', icon: '🥇', isPopular: true },
+    { id: 'g2', name: 'Diamond Ring', price: 150, category: 'Luxury', icon: '💍', isPopular: true },
+    { id: 'g3', name: 'Celebration Cake', price: 50, category: 'Food', icon: '🎂', isNew: true },
+    { id: 'g4', name: 'Fresh Flowers', price: 40, category: 'Flowers', icon: '🌹' },
+    { id: 'g5', name: 'Premium Champagne', price: 20, category: 'Drinks', icon: '🍾' },
+    { id: 'g6', name: 'Gift Card', price: 10, category: 'Cash', icon: '💳' },
+    { id: 'g7', name: 'Teddy Bear', price: 25, category: 'Toys', icon: '🧸' },
+    { id: 'g8', name: 'Chocolate Box', price: 15, category: 'Food', icon: '🍫' }
   ]);
 });
 
-app.post("/api/gifts/purchase", verifyToken, (req, res) => {
-  const { giftId, giftName, amount, network, phoneNumber, recipientId, recipientName } = req.body;
-  if (!giftId || !amount || !recipientId) return res.status(400).json({ error: "Missing required fields" });
-  const user = data.users.find(u => u.id === req.userId);
-  const newBalance = addToWallet(recipientId, parseFloat(amount), giftName, user?.name || 'Someone');
-  const transaction = { id: Date.now().toString(), giftId, giftName, amount: parseFloat(amount), buyerId: req.userId, buyerName: user?.name || 'Someone', recipientId, recipientName, network, phoneNumber, status: 'completed', date: new Date().toISOString() };
-  data.giftTransactions.unshift(transaction);
-  saveData();
-  addNotification(recipientId, 'gift', '🎁 Gift Received', `${user?.name || 'Someone'} sent you ${giftName} worth ₵${amount}!`);
-  res.json({ success: true, transaction, newBalance });
-});
-
-// ============ WALLET ENDPOINTS ============
-app.get("/api/wallet/balance", verifyToken, (req, res) => {
-  const userId = req.userId;
-  console.log(`💰 GET /api/wallet/balance for user ${userId}`);
-  
-  const wallet = data.wallets[userId];
-  if (!wallet) {
-    return res.json({
-      balance: 0,
-      total_received: 0,
-      total_sent: 0,
-      total_withdrawn: 0,
-      total_fees_paid: 0
-    });
-  }
-  
-  res.json({
-    balance: wallet.balance || 0,
-    total_received: wallet.totalReceived || 0,
-    total_sent: wallet.totalSent || 0,
-    total_withdrawn: wallet.totalWithdrawn || 0,
-    total_fees_paid: wallet.totalFeesPaid || 0
-  });
-});
-
-app.get("/api/wallet/transactions", verifyToken, (req, res) => {
-  const userId = req.userId;
-  console.log(`📊 GET /api/wallet/transactions for user ${userId}`);
-  
-  const wallet = data.wallets[userId];
-  if (!wallet) {
-    return res.json({ transactions: [] });
-  }
-  
-  res.json({ transactions: wallet.transactions || [] });
-});
-
-app.post("/api/wallet/withdraw", verifyToken, (req, res) => {
-  const userId = req.userId;
-  const { amount, network, phoneNumber } = req.body;
-  
-  console.log(`💰 POST /api/wallet/withdraw: ₵${amount} to ${network} ${phoneNumber}`);
-  
-  if (!amount || amount <= 0) {
-    return res.status(400).json({ error: 'Invalid amount' });
-  }
-  
-  if (amount < 10) {
-    return res.status(400).json({ error: 'Minimum withdrawal is ₵10' });
-  }
-  
-  if (!data.wallets[userId]) {
-    data.wallets[userId] = { balance: 0, transactions: [], totalReceived: 0, totalWithdrawn: 0, totalFeesPaid: 0 };
-  }
-  
-  const wallet = data.wallets[userId];
-  const amountNum = parseFloat(amount);
-  
-  if (wallet.balance < amountNum) {
-    return res.status(400).json({ error: `Insufficient balance. Available: ₵${wallet.balance}` });
-  }
-  
-  const fee = amountNum * 0.01;
-  const netAmount = amountNum - fee;
-  
-  wallet.balance -= amountNum;
-  wallet.totalWithdrawn = (wallet.totalWithdrawn || 0) + amountNum;
-  wallet.totalFeesPaid = (wallet.totalFeesPaid || 0) + fee;
-  
-  wallet.transactions.unshift({
-    id: `wd_${Date.now()}`,
-    type: 'withdrawal',
-    amount: amountNum,
-    fee: fee,
-    network: network || 'MTN',
-    phoneNumber: phoneNumber || '',
-    description: `Withdrawal to ${network || 'MTN'}`,
-    status: 'completed',
-    date: new Date().toISOString()
-  });
-  
-  data.companyFees.push({
-    id: `fee_${Date.now()}`,
-    userId: userId,
-    amount: fee,
-    type: 'withdrawal_fee',
-    date: new Date().toISOString()
-  });
-  
-  data.companyAccount.totalFees = (data.companyAccount.totalFees || 0) + fee;
-  
-  saveData();
-  
-  res.json({
-    success: true,
-    newBalance: wallet.balance,
-    fee: fee,
-    userReceives: netAmount,
-    balanceBefore: wallet.balance + amountNum
-  });
-});
-
-app.post("/api/wallet/add-gift", verifyToken, (req, res) => {
-  const userId = req.userId;
-  const { celebrantId, celebrantName, giftAmount, giftName, fromName, isAnonymous } = req.body;
-  
-  console.log(`🎁 POST /api/wallet/add-gift: ${giftName} ₵${giftAmount} to ${celebrantName}`);
-  
-  if (!celebrantId || !giftAmount || !giftName) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-  
-  const amount = parseFloat(giftAmount);
-  const senderName = isAnonymous ? 'Anonymous' : (fromName || 'Someone');
-  
-  if (!data.wallets[celebrantId]) {
-    data.wallets[celebrantId] = { balance: 0, transactions: [], totalReceived: 0, totalWithdrawn: 0, totalFeesPaid: 0 };
-  }
-  
-  const wallet = data.wallets[celebrantId];
-  wallet.balance = (wallet.balance || 0) + amount;
-  wallet.totalReceived = (wallet.totalReceived || 0) + amount;
-  
-  wallet.transactions.unshift({
-    id: `gift_${Date.now()}`,
-    type: 'gift_received',
-    amount: amount,
-    giftName: giftName,
-    fromName: senderName,
-    description: `Gift received: ${giftName} from ${senderName}`,
-    status: 'completed',
-    date: new Date().toISOString()
-  });
-  
-  saveData();
-  
-  addNotification(celebrantId, 'gift', '🎁 Gift Received', `${senderName} sent you ${giftName} worth ₵${amount}!`);
-  
-  res.json({
-    success: true,
-    newBalance: wallet.balance,
-    message: `₵${amount} added to ${celebrantName}'s wallet`
-  });
-});
-
-// ============ SETTINGS ============
-if (!data.userSettings) { data.userSettings = {}; saveData(); }
-if (!data.blockedUsers) { data.blockedUsers = {}; saveData(); }
-
-app.get('/api/user/settings/:userId', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' },
-      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
-      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
-    };
-    saveData();
-  }
-  res.json(data.userSettings[userId]);
-});
-
-app.put('/api/user/settings/:userId', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { theme, privacy, notifications } = req.body;
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' },
-      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
-      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
-    };
-  }
-  if (theme) data.userSettings[userId].theme = { ...data.userSettings[userId].theme, ...theme };
-  if (privacy) data.userSettings[userId].privacy = { ...data.userSettings[userId].privacy, ...privacy };
-  if (notifications) data.userSettings[userId].notifications = { ...data.userSettings[userId].notifications, ...notifications };
-  saveData();
-  res.json({ success: true, settings: data.userSettings[userId] });
-});
-
-app.get('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.userSettings[userId]) {
-    return res.json({ darkMode: false, primaryColor: '#6366f1' });
-  }
-  res.json(data.userSettings[userId].theme || { darkMode: false, primaryColor: '#6366f1' });
-});
-
-app.put('/api/user/settings/:userId/theme', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { darkMode, primaryColor } = req.body;
-  if (!data.userSettings[userId]) {
-    data.userSettings[userId] = {
-      theme: { darkMode: false, primaryColor: '#6366f1' },
-      privacy: { birthdayVisibility: 'friends', postVisibility: 'friends', allowWishes: 'everyone', allowTagging: 'friends' },
-      notifications: { enabled: true, birthdayReminders: true, friendRequests: true, giftNotifications: true, commentNotifications: true }
-    };
-  }
-  if (darkMode !== undefined) data.userSettings[userId].theme.darkMode = darkMode;
-  if (primaryColor) data.userSettings[userId].theme.primaryColor = primaryColor;
-  saveData();
-  res.json({ success: true, theme: data.userSettings[userId].theme });
-});
-
-// ============ BLOCKED USERS ============
-app.get('/api/user/blocked/:userId', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.blockedUsers[userId]) { data.blockedUsers[userId] = []; saveData(); }
-  const blockedUserIds = data.blockedUsers[userId] || [];
-  const blockedUsers = data.users.filter(u => blockedUserIds.includes(u.id)).map(u => ({
-    id: u.id, name: u.name, username: u.username, profileImage: u.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    reason: 'Blocked by user', blockedAt: new Date().toISOString()
-  }));
-  res.json({ blockedUsers });
-});
-
-app.post('/api/user/block/:userId', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { blockUserId } = req.body;
-  if (!data.blockedUsers[userId]) data.blockedUsers[userId] = [];
-  if (!data.blockedUsers[userId].includes(blockUserId)) {
-    data.blockedUsers[userId].push(blockUserId);
-    saveData();
-  }
-  res.json({ success: true, blockedUsers: data.blockedUsers[userId] });
-});
-
-app.delete('/api/user/unblock/:userId', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const { blockUserId } = req.body;
-  if (data.blockedUsers[userId]) {
-    data.blockedUsers[userId] = data.blockedUsers[userId].filter(id => id !== blockUserId);
-    saveData();
-  }
-  res.json({ success: true, blockedUsers: data.blockedUsers[userId] || [] });
-});
-
-// ============ CALENDAR ENDPOINTS ============
-const initCalendarEvents = (userId) => {
-  if (!data.calendarEvents) data.calendarEvents = {};
-  if (!data.calendarEvents[userId]) {
-    data.calendarEvents[userId] = [];
-    saveData();
-  }
-};
-
-app.get('/api/calendar/events/me', verifyToken, (req, res) => {
-  const userId = req.userId;
-  initCalendarEvents(userId);
-  const events = data.calendarEvents[userId] || [];
-  res.json({ success: true, events });
-});
-
-app.post('/api/calendar/events', verifyToken, (req, res) => {
-  const userId = req.userId;
-  const { title, date, type, celebrantName, celebrantId, reminderSet } = req.body;
-  
-  if (!title || !date) {
-    return res.status(400).json({ error: 'Title and date are required' });
-  }
-  
-  initCalendarEvents(userId);
-  
-  const newEvent = {
-    id: Date.now().toString(),
-    title,
-    date,
-    type: type || 'birthday',
-    celebrantName: celebrantName || '',
-    celebrantId: celebrantId || '',
-    reminderSet: reminderSet || false,
-    createdAt: new Date().toISOString()
-  };
-  
-  data.calendarEvents[userId].push(newEvent);
-  saveData();
-  
-  res.status(201).json({ success: true, events: data.calendarEvents[userId] });
-});
-
-app.put('/api/calendar/events/:id', verifyToken, (req, res) => {
-  const userId = req.userId;
-  const { id } = req.params;
-  const { title, date, type, celebrantName, celebrantId, reminderSet } = req.body;
-  
-  initCalendarEvents(userId);
-  
-  const index = data.calendarEvents[userId].findIndex(e => e.id === id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'Event not found' });
-  }
-  
-  data.calendarEvents[userId][index] = {
-    ...data.calendarEvents[userId][index],
-    title: title || data.calendarEvents[userId][index].title,
-    date: date || data.calendarEvents[userId][index].date,
-    type: type || data.calendarEvents[userId][index].type,
-    celebrantName: celebrantName !== undefined ? celebrantName : data.calendarEvents[userId][index].celebrantName,
-    celebrantId: celebrantId !== undefined ? celebrantId : data.calendarEvents[userId][index].celebrantId,
-    reminderSet: reminderSet !== undefined ? reminderSet : data.calendarEvents[userId][index].reminderSet,
-  };
-  saveData();
-  
-  res.json({ success: true, events: data.calendarEvents[userId] });
-});
-
-app.delete('/api/calendar/events/:id', verifyToken, (req, res) => {
-  const userId = req.userId;
-  const { id } = req.params;
-  
-  initCalendarEvents(userId);
-  
-  const index = data.calendarEvents[userId].findIndex(e => e.id === id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'Event not found' });
-  }
-  
-  data.calendarEvents[userId].splice(index, 1);
-  saveData();
-  
-  res.json({ success: true, events: data.calendarEvents[userId] });
-});
-
-app.put('/api/calendar/events/:id/reminder', verifyToken, (req, res) => {
-  const userId = req.userId;
-  const { id } = req.params;
-  
-  initCalendarEvents(userId);
-  
-  const index = data.calendarEvents[userId].findIndex(e => e.id === id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'Event not found' });
-  }
-  
-  data.calendarEvents[userId][index].reminderSet = !data.calendarEvents[userId][index].reminderSet;
-  saveData();
-  
-  res.json({ success: true, events: data.calendarEvents[userId] });
-});
-
-// ============ STORIES ============
-app.get('/api/stories', (req, res) => {
-  const stories = data.stories || [];
-  res.json({ success: true, stories });
-});
-
-app.post('/api/stories', verifyToken, (req, res) => {
-  const { contentUrl, isVideo, caption, privacy } = req.body;
-  const user = data.users.find(u => u.id === req.userId);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const newStory = {
-    id: Date.now().toString(),
-    userId: user.id.toString(),
-    userName: user.name,
-    userAvatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-    contentUrl, isVideo: isVideo || false, caption: caption || '', privacy: privacy || 'friends',
-    likes: 0, viewers: 0, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-  };
-  if (!data.stories) data.stories = [];
-  data.stories.unshift(newStory);
-  saveData();
-  res.status(201).json({ success: true, story: newStory });
-});
-
-app.post('/api/stories/seen', verifyToken, (req, res) => {
-  const { storyId } = req.body;
-  const userId = req.userId;
-  if (!data.seenStories) data.seenStories = [];
-  const existing = data.seenStories.find(s => s.storyId === storyId && s.userId === userId);
-  if (!existing) {
-    data.seenStories.push({ storyId, userId, seenAt: new Date().toISOString() });
-    const story = (data.stories || []).find(s => s.id === storyId);
-    if (story) story.viewers = (story.viewers || 0) + 1;
-    saveData();
-  }
-  res.json({ success: true });
-});
-
-app.post('/api/stories/:id/like', verifyToken, (req, res) => {
-  const { id } = req.params;
-  const story = (data.stories || []).find(s => s.id === id);
-  if (!story) return res.status(404).json({ error: 'Story not found' });
-  story.likes = (story.likes || 0) + 1;
-  saveData();
-  res.json({ success: true, likes: story.likes });
-});
-
-app.delete('/api/stories/:id/like', verifyToken, (req, res) => {
-  const { id } = req.params;
-  const story = (data.stories || []).find(s => s.id === id);
-  if (!story) return res.status(404).json({ error: 'Story not found' });
-  story.likes = Math.max(0, (story.likes || 0) - 1);
-  saveData();
-  res.json({ success: true, likes: story.likes });
-});
-
-app.get('/api/stories/seen/:userId', (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (!data.seenStories) data.seenStories = [];
-  const seenStoryIds = data.seenStories.filter(s => s.userId === userId).map(s => s.storyId);
-  res.json({ success: true, seenStoryIds });
-});
-
-app.delete('/api/stories/:id', verifyToken, (req, res) => {
-  const { id } = req.params;
-  const userId = req.userId;
-  const storyIndex = (data.stories || []).findIndex(s => s.id === id);
-  if (storyIndex === -1) return res.status(404).json({ error: 'Story not found' });
-  const story = data.stories[storyIndex];
-  if (parseInt(story.userId) !== userId) return res.status(403).json({ error: 'Not your story' });
-  data.stories.splice(storyIndex, 1);
-  saveData();
-  res.json({ success: true });
-});
-
-// ============ BANNERS ============
-if (!data.banners) {
-  data.banners = [
-    { id: 'banner_fallback_1', title: '🎉 Today\'s Celebrations', subtitle: 'Check out today\'s events!', icon: '🎂', colors: ['#6366f1', '#8b5cf6', '#a855f7'], type: 'celebrations', link: 'today', active: true, priority: 1, views: 0, clicks: 0, createdAt: new Date().toISOString() },
-    { id: 'banner_fallback_2', title: '🎁 Gift Shop', subtitle: 'Send a gift to someone special', icon: '🎁', colors: ['#ec4899', '#f472b6', '#f9a8d4'], type: 'gifts', link: 'gift_shop', active: true, priority: 2, views: 0, clicks: 0, createdAt: new Date().toISOString() }
-  ];
-  saveData();
-}
-
-app.get('/api/banners', (req, res) => {
-  const activeBanners = (data.banners || []).filter(b => b.active !== false);
-  res.json({ success: true, banners: activeBanners });
-});
-
-app.post('/api/banners/:id/view', (req, res) => {
-  const { id } = req.params;
-  const banner = (data.banners || []).find(b => b.id === id);
-  if (banner) { banner.views = (banner.views || 0) + 1; saveData(); }
-  res.json({ success: true });
-});
-
-app.post('/api/banners/:id/click', (req, res) => {
-  const { id } = req.params;
-  const banner = (data.banners || []).find(b => b.id === id);
-  if (banner) { banner.clicks = (banner.clicks || 0) + 1; saveData(); }
-  res.json({ success: true });
-});
-
-// ============ DELETE ACCOUNT ============
-app.delete('/api/user/delete', verifyToken, (req, res) => {
-  const userId = req.userId;
-  const userIndex = data.users.findIndex(u => u.id === userId);
-  if (userIndex !== -1) data.users.splice(userIndex, 1);
-  delete data.wallets[userId];
-  data.friendships = data.friendships.filter(f => f.userId !== userId && f.friendId !== userId);
-  data.friendRequests = data.friendRequests.filter(r => r.fromUserId !== userId && r.toUserId !== userId);
-  data.posts = data.posts.filter(p => p.userId !== userId);
-  data.notifications = data.notifications.filter(n => n.userId !== userId);
-  delete data.userSettings[userId];
-  delete data.blockedUsers[userId];
-  delete data.calendarEvents[userId];
-  saveData();
-  res.json({ success: true, message: 'Account deleted successfully' });
-});
-
-// ============ FOLLOW/UNFOLLOW ============
-app.post('/api/users/follow/:userId', verifyToken, (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const followerId = req.userId;
-  if (followerId === userId) return res.status(400).json({ error: 'Cannot follow yourself' });
-  if (!data.follows) data.follows = [];
-  const existing = data.follows.find(f => f.followerId === followerId && f.followingId === userId);
-  if (!existing) {
-    data.follows.push({ id: Date.now().toString(), followerId, followingId: userId, createdAt: new Date().toISOString() });
-    saveData();
-    const follower = data.users.find(u => u.id === followerId);
-    if (follower) addNotification(userId, 'follow', '👤 New Follower', `${follower.name} started following you!`, follower.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg', followerId, follower.name);
-  }
-  res.json({ success: true });
-});
-
-app.delete('/api/users/follow/:userId', verifyToken, (req, res) => {
-  const userId = parseInt(req.params.userId);
-  const followerId = req.userId;
-  if (data.follows) {
-    data.follows = data.follows.filter(f => !(f.followerId === followerId && f.followingId === userId));
-    saveData();
-  }
-  res.json({ success: true });
-});
-
-// ============ LIVE STREAMS ENDPOINTS ============
-if (!data.liveStreams) {
-  data.liveStreams = [];
-  saveData();
-}
-
-app.get('/api/live/streams', (req, res) => {
-  console.log('📡 GET /api/live/streams');
+app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
   try {
-    const liveStreams = data.liveStreams || [];
-    const activeStreams = liveStreams.filter(s => s.isLive === true);
-    res.json({ success: true, streams: activeStreams });
-  } catch (error) {
-    console.error('  ❌ Error fetching streams:', error);
-    res.status(500).json({ error: 'Failed to fetch streams' });
-  }
-});
+    const { giftId, giftName, amount, network, phoneNumber, recipientId, recipientName } = req.body;
+    const senderId = req.userId;
 
-app.get('/api/live/streams/:id', (req, res) => {
-  const { id } = req.params;
-  try {
-    const stream = (data.liveStreams || []).find(s => s.id === id);
-    if (!stream) {
-      return res.status(404).json({ error: 'Stream not found' });
-    }
-    res.json({ success: true, stream });
-  } catch (error) {
-    console.error('  ❌ Error fetching stream:', error);
-    res.status(500).json({ error: 'Failed to fetch stream' });
-  }
-});
-
-app.post('/api/live/streams', verifyToken, (req, res) => {
-  console.log('📡 POST /api/live/streams');
-  const { title, privacy } = req.body;
-  const user = data.users.find(u => u.id === req.userId);
-  
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-
-  try {
-    const newStream = {
-      id: Date.now().toString(),
-      userId: user.id,
-      userName: user.name,
-      userHandle: user.username,
-      userAvatar: user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg',
-      title: title || `${user.name}'s Live Stream`,
-      thumbnail: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&h=300&fit=crop',
-      viewerCount: 0,
-      startedAt: new Date().toISOString(),
-      isLive: true,
-      streamUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-      category: 'General',
-      privacy: privacy || 'everyone',
-      isBirthday: false,
-      celebrantName: user.name,
-    };
-
-    if (!data.liveStreams) data.liveStreams = [];
-    data.liveStreams.push(newStream);
-    saveData();
-
-    console.log(`  ✅ ${user.name} started live stream: ${newStream.id}`);
-    res.status(201).json({ success: true, stream: newStream });
-  } catch (error) {
-    console.error('  ❌ Error creating stream:', error);
-    res.status(500).json({ error: 'Failed to create stream' });
-  }
-});
-
-app.put('/api/live/streams/:id/end', verifyToken, (req, res) => {
-  const { id } = req.params;
-  
-  try {
-    const stream = (data.liveStreams || []).find(s => s.id === id);
-    if (!stream) {
-      return res.status(404).json({ error: 'Stream not found' });
-    }
-    if (stream.userId !== req.userId) {
-      return res.status(403).json({ error: 'Not your stream' });
+    if (!giftId || !amount || !recipientId) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    stream.isLive = false;
-    stream.endedAt = new Date().toISOString();
-    saveData();
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt <= 0) {
+      return res.status(400).json({ error: 'Invalid amount' });
+    }
 
-    console.log(`  ✅ Stream ended by ${stream.userName}`);
+    // Check if recipient has a wallet
+    const walletCheck = await query('SELECT id FROM wallets WHERE user_id = $1', [recipientId]);
+    if (walletCheck.rows.length === 0) {
+      await query('INSERT INTO wallets (user_id) VALUES ($1)', [recipientId]);
+    }
+
+    // Add to wallet
+    await query(
+      `UPDATE wallets 
+       SET balance = balance + $1, 
+           total_received = total_received + $1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $2`,
+      [amt, recipientId]
+    );
+
+    // Create gift record
+    await query(
+      `INSERT INTO gifts (sender_id, recipient_id, gift_id, gift_name, amount, network, phone_number, status, completed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed', CURRENT_TIMESTAMP)`,
+      [senderId, recipientId, giftId, giftName, amt, network || 'MTN', phoneNumber || '']
+    );
+
     res.json({ success: true });
   } catch (error) {
-    console.error('  ❌ Error ending stream:', error);
-    res.status(500).json({ error: 'Failed to end stream' });
+    console.error('❌ Purchase gift error:', error);
+    res.status(500).json({ error: 'Purchase gift failed: ' + error.message });
   }
 });
 
-app.post('/api/live/streams/:id/view', (req, res) => {
-  const { id } = req.params;
-  
+// ============ BOOKMARKS ============
+app.post('/api/posts/:id/bookmark', verifyToken, async (req, res) => {
   try {
-    const stream = (data.liveStreams || []).find(s => s.id === id);
-    if (!stream) {
-      return res.status(404).json({ error: 'Stream not found' });
+    const { id } = req.params;
+    const userId = req.userId;
+
+    const existing = await query(
+      'SELECT id FROM bookmarks WHERE post_id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.json({ success: true, message: 'Already bookmarked' });
     }
-    
-    stream.viewerCount = (stream.viewerCount || 0) + 1;
-    saveData();
-    res.json({ success: true, viewerCount: stream.viewerCount });
+
+    await query(
+      'INSERT INTO bookmarks (post_id, user_id) VALUES ($1, $2)',
+      [id, userId]
+    );
+
+    res.json({ success: true });
   } catch (error) {
-    console.error('  ❌ Error updating viewers:', error);
-    res.status(500).json({ error: 'Failed to update viewers' });
+    console.error('❌ Bookmark error:', error);
+    res.status(500).json({ error: 'Failed to bookmark post' });
   }
 });
 
-// ============ POST /api/notifications ============
-app.post('/api/notifications', (req, res) => {
-  const { userId, type, title, message, imageUrl, targetId, targetName, extraData } = req.body;
-  console.log(`📨 POST /api/notifications for user ${userId}: ${title}`);
-  
-  if (!userId || !type || !message) {
-    return res.status(400).json({ error: 'Missing required fields: userId, type, message' });
-  }
-  
+app.delete('/api/posts/:id/bookmark', verifyToken, async (req, res) => {
   try {
-    if (!data.notifications) data.notifications = [];
-    
-    const newNotification = {
-      id: Date.now().toString(),
-      userId: parseInt(userId),
-      type,
-      title: title || type,
-      message,
-      imageUrl: imageUrl || null,
-      targetId: targetId || null,
-      targetName: targetName || null,
-      extraData: extraData || {},
-      isRead: false,
-      createdAt: new Date().toISOString()
-    };
-    
-    data.notifications.unshift(newNotification);
-    saveData();
-    
-    console.log(`✅ Notification created: ${newNotification.id}`);
-    res.status(201).json(newNotification);
+    const { id } = req.params;
+    const userId = req.userId;
+
+    await query(
+      'DELETE FROM bookmarks WHERE post_id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    res.json({ success: true });
   } catch (error) {
-    console.error('❌ Failed to create notification:', error);
-    res.status(500).json({ error: 'Failed to create notification' });
+    console.error('❌ Unbookmark error:', error);
+    res.status(500).json({ error: 'Failed to unbookmark post' });
   }
 });
 
-// ============ START SERVER ============
+app.get('/api/posts/bookmarks', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const result = await query(
+      `SELECT p.*, u.name as author_name, u.username as author_handle, u.profile_image as author_image
+       FROM bookmarks b
+       JOIN posts p ON p.id = b.post_id
+       JOIN users u ON u.id = p.user_id
+       WHERE b.user_id = $1
+       ORDER BY b.created_at DESC`,
+      [userId]
+    );
+
+    res.json({ posts: result.rows });
+  } catch (error) {
+    console.error('❌ Get bookmarks error:', error);
+    res.status(500).json({ error: 'Failed to get bookmarks' });
+  }
+});
+
+// ============ NOTIFICATIONS ============
+app.get('/api/notifications', verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50', [req.userId]);
+    const unread = await query('SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = false', [req.userId]);
+    res.json({ notifications: result.rows, unreadCount: parseInt(unread.rows[0]?.count || 0) });
+  } catch (e) {
+    res.json({ notifications: [], unreadCount: 0 });
+  }
+});
+
+app.post('/api/notifications', verifyToken, async (req, res) => {
+  try {
+    const { userId, type, title, message, imageUrl, targetId, targetName, extraData } = req.body;
+    if (!userId || !type || !message) return res.status(400).json({ error: 'Missing required fields' });
+    const result = await query(
+      `INSERT INTO notifications (user_id, type, title, message, image_url, target_id, target_name, extra_data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [userId, type, title, message, imageUrl || null, targetId || null, targetName || null, extraData || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: 'Create notification failed' });
+  }
+});
+
+app.put('/api/notifications/:id/read', verifyToken, async (req, res) => {
+  await query('UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  res.json({ success: true });
+});
+
+app.put('/api/notifications/read-all', verifyToken, async (req, res) => {
+  await query('UPDATE notifications SET is_read = true WHERE user_id = $1', [req.userId]);
+  res.json({ success: true });
+});
+
+app.delete('/api/notifications/:id', verifyToken, async (req, res) => {
+  await query('DELETE FROM notifications WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+  res.json({ success: true });
+});
+
+// ============ WALLET ============
+app.get('/api/wallet/balance', verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT balance FROM wallets WHERE user_id = $1', [req.userId]);
+    res.json({ balance: parseFloat(result.rows[0]?.balance || 0) });
+  } catch (e) {
+    res.json({ balance: 0 });
+  }
+});
+
+app.get('/api/wallet/transactions', verifyToken, async (req, res) => {
+  try {
+    const result = await query('SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50', [req.userId]);
+    res.json({ transactions: result.rows });
+  } catch (e) {
+    res.json({ transactions: [] });
+  }
+});
+
+app.post('/api/wallet/withdraw', verifyToken, async (req, res) => {
+  try {
+    const { amount, network, phoneNumber } = req.body;
+    if (!amount || amount < 10) return res.status(400).json({ error: 'Minimum withdrawal is ₵10' });
+    const wallet = await query('SELECT balance FROM wallets WHERE user_id = $1', [req.userId]);
+    if (!wallet.rows.length) return res.status(400).json({ error: 'Wallet not found' });
+    const balance = parseFloat(wallet.rows[0].balance) || 0;
+    const amt = parseFloat(amount);
+    const fee = amt * 0.01;
+    const total = amt + fee;
+    if (balance < total) return res.status(400).json({ error: 'Insufficient balance' });
+    const newBalance = balance - total;
+    await query('UPDATE wallets SET balance = $1, total_withdrawn = total_withdrawn + $2, total_fees_paid = total_fees_paid + $3 WHERE user_id = $4', [newBalance, amt, fee, req.userId]);
+    await query(
+      `INSERT INTO transactions (user_id, type, amount, fee, balance_before, balance_after, description, status, network, phone_number, completed_at)
+       VALUES ($1, 'withdrawal', $2, $3, $4, $5, $6, 'completed', $7, $8, CURRENT_TIMESTAMP)`,
+      [req.userId, amt, fee, balance, newBalance, `Withdrawal to ${network}`, network, phoneNumber]
+    );
+    res.json({ success: true, newBalance, fee, userReceives: amt - fee });
+  } catch (e) {
+    res.status(500).json({ error: 'Withdrawal failed' });
+  }
+});
+
+// ============ SERVER START ============
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`👥 Users: ${data.users.length}`);
-  console.log(`📝 Posts: ${data.posts.length}`);
-  console.log(`📢 Notifications: ${data.notifications.length}`);
-  console.log(`💰 Company fees: ₵${data.companyAccount.totalFees}`);
-  console.log(`📊 Banners: ${data.banners.length}`);
-  console.log(`📡 Live Streams: ${data.liveStreams?.length || 0}`);
-  console.log(`📅 Calendar events: ${Object.keys(data.calendarEvents || {}).length} users have events`);
-  console.log(`📌 Bookmarks: ${data.bookmarks?.length || 0}`);
-  console.log(`💰 Wallets: ${Object.keys(data.wallets || {}).length} users`);
-});
-
-
-// ============ NOTIFICATIONS ENDPOINT (FIXED) ============
-// ✅ POST /api/notifications - Create notification with better validation
-app.post('/api/notifications', (req, res) => {
-  const { userId, type, title, message, imageUrl, targetId, targetName, extraData } = req.body;
-  
-  console.log(`📨 POST /api/notifications for user ${userId}: ${title || 'Notification'}`);
-  console.log('📨 Body:', JSON.stringify(req.body, null, 2));
-  
-  // ✅ Validate required fields
-  if (!userId) {
-    console.error('❌ Missing userId');
-    return res.status(400).json({ error: 'userId is required' });
-  }
-  
-  if (!type) {
-    console.error('❌ Missing type');
-    return res.status(400).json({ error: 'type is required' });
-  }
-  
-  if (!message) {
-    console.error('❌ Missing message');
-    return res.status(400).json({ error: 'message is required' });
-  }
-  
+// ============================================================
+// GET /api/follows - Get users the current user follows
+// ============================================================
+app.get('/api/follows', verifyToken, async (req, res) => {
   try {
-    if (!data.notifications) data.notifications = [];
+    const userId = req.userId;
     
-    // ✅ Check for duplicate (same userId, type, message within 5 seconds)
-    const now = Date.now();
-    const duplicate = data.notifications.some(n => 
-      n.userId === parseInt(userId) &&
-      n.type === type &&
-      n.message === message &&
-      (now - new Date(n.createdAt).getTime()) < 5000
+    const result = await query(
+      `SELECT u.id, u.name, u.username, u.profile_image
+       FROM follows f
+       JOIN users u ON u.id = f.following_id
+       WHERE f.follower_id = $1
+       ORDER BY u.name ASC`,
+      [userId]
     );
     
-    if (duplicate) {
-      console.log('⚠️ Duplicate notification prevented');
-      return res.status(409).json({ error: 'Duplicate notification' });
+    res.json({ following: result.rows });
+  } catch (error) {
+    console.error('❌ Get follows error:', error);
+    res.json({ following: [] });
+  }
+});
+
+// POST /api/follows/:userId - Follow a user
+app.post('/api/follows/:userId', verifyToken, async (req, res) => {
+  try {
+    const followerId = req.userId;
+    const followingId = req.params.userId;
+    
+    if (followerId === parseInt(followingId)) {
+      return res.status(400).json({ error: 'Cannot follow yourself' });
     }
     
-    const newNotification = {
-      id: Date.now().toString(),
-      userId: parseInt(userId),
-      type: type,
-      title: title || type || 'Notification',
-      message: message,
-      imageUrl: imageUrl || null,
-      targetId: targetId || null,
-      targetName: targetName || null,
-      extraData: extraData || {},
-      isRead: false,
-      createdAt: new Date().toISOString()
-    };
+    // Check if already following
+    const existing = await query(
+      'SELECT id FROM follows WHERE follower_id = $1 AND following_id = $2',
+      [followerId, followingId]
+    );
     
-    data.notifications.unshift(newNotification);
-    saveData();
+    if (existing.rows.length > 0) {
+      return res.json({ success: true, message: 'Already following' });
+    }
     
-    console.log(`✅ Notification created: ${newNotification.id}`);
-    res.status(201).json(newNotification);
+    await query(
+      'INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)',
+      [followerId, followingId]
+    );
+    
+    res.json({ success: true });
   } catch (error) {
-    console.error('❌ Failed to create notification:', error);
-    res.status(500).json({ error: 'Failed to create notification' });
+    console.error('❌ Follow error:', error);
+    res.status(500).json({ error: 'Failed to follow user' });
   }
+});
+
+// DELETE /api/follows/:userId - Unfollow a user
+app.delete('/api/follows/:userId', verifyToken, async (req, res) => {
+  try {
+    const followerId = req.userId;
+    const followingId = req.params.userId;
+    
+    await query(
+      'DELETE FROM follows WHERE follower_id = $1 AND following_id = $2',
+      [followerId, followingId]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Unfollow error:', error);
+    res.status(500).json({ error: 'Failed to unfollow user' });
+  }
+});
+// ============================================================
+// GET /api/banners - Get all banners
+// ============================================================
+app.get('/api/banners', async (req, res) => {
+  try {
+    // Try to get from database
+    const result = await query(
+      `SELECT id, title, subtitle, icon, colors, active, priority, views_count, clicks_count, created_at
+       FROM banners 
+       WHERE active = true
+       ORDER BY priority ASC`
+    ).catch(() => ({ rows: [] }));
+
+    if (result.rows.length > 0) {
+      return res.json({ 
+        success: true, 
+        banners: result.rows.map(b => ({
+          id: b.id,
+          title: b.title,
+          subtitle: b.subtitle,
+          icon: b.icon || '🎉',
+          colors: b.colors || ['#6366f1', '#8b5cf6', '#a855f7'],
+          active: b.active,
+          priority: b.priority || 0,
+          views: b.views_count || 0,
+          clicks: b.clicks_count || 0,
+          createdAt: b.created_at
+        }))
+      });
+    }
+
+    // Fallback banners
+    res.json({
+      success: true,
+      banners: [
+        {
+          id: 'banner_fallback_1',
+          title: '🎉 Today\'s Celebrations',
+          subtitle: 'Check out today\'s events!',
+          icon: '🎂',
+          colors: ['#6366f1', '#8b5cf6', '#a855f7'],
+          type: 'celebrations',
+          link: 'today',
+          active: true,
+          priority: 1,
+          views: 0,
+          clicks: 0,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'banner_fallback_2',
+          title: '🎁 Gift Shop',
+          subtitle: 'Send a gift to someone special',
+          icon: '🎁',
+          colors: ['#ec4899', '#f472b6', '#f9a8d4'],
+          type: 'gifts',
+          link: 'gift_shop',
+          active: true,
+          priority: 2,
+          views: 0,
+          clicks: 0,
+          createdAt: new Date().toISOString()
+        }
+      ]
+    });
+  } catch (error) {
+    console.error('❌ Get banners error:', error);
+    res.json({
+      success: true,
+      banners: [
+        {
+          id: 'banner_fallback_1',
+          title: '🎉 Today\'s Celebrations',
+          subtitle: 'Check out today\'s events!',
+          icon: '🎂',
+          colors: ['#6366f1', '#8b5cf6', '#a855f7'],
+          active: true,
+          priority: 1,
+          views: 0,
+          clicks: 0,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'banner_fallback_2',
+          title: '🎁 Gift Shop',
+          subtitle: 'Send a gift to someone special',
+          icon: '🎁',
+          colors: ['#ec4899', '#f472b6', '#f9a8d4'],
+          active: true,
+          priority: 2,
+          views: 0,
+          clicks: 0,
+          createdAt: new Date().toISOString()
+        }
+      ]
+    });
+  }
+});
+
+// POST /api/banners/:id/view - Track banner view
+app.post('/api/banners/:id/view', async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Try to update view count in database
+    await query(
+      'UPDATE banners SET views_count = views_count + 1 WHERE id = $1',
+      [id]
+    ).catch(() => {});
+    res.json({ success: true });
+  } catch (error) {
+    res.json({ success: true });
+  }
+});
+
+// POST /api/banners/:id/click - Track banner click
+app.post('/api/banners/:id/click', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query(
+      'UPDATE banners SET clicks_count = clicks_count + 1 WHERE id = $1',
+      [id]
+    ).catch(() => {});
+    res.json({ success: true });
+  } catch (error) {
+    res.json({ success: true });
+  }
+});
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`✅ PostgreSQL connected`);
+  console.log(`📝 All routes loaded`);
 });
