@@ -567,7 +567,7 @@ app.get('/api/gifts', (req, res) => {
 });
 
 // ============================================================
-// ✅ POST /api/gifts/purchase - Purchase a gift (WITH NOTIFICATION)
+// POST /api/gifts/purchase - Purchase a gift (WITH BOTH NOTIFICATIONS)
 // ============================================================
 app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
   try {
@@ -593,6 +593,10 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
     const senderResult = await query('SELECT name, profile_image FROM users WHERE id = $1', [senderId]);
     const senderName = senderResult.rows[0]?.name || 'Someone';
     const senderImage = senderResult.rows[0]?.profile_image || null;
+
+    // ✅ Get recipient info
+    const recipientResult = await query('SELECT name, profile_image FROM users WHERE id = $1', [recipientId]);
+    const recipientImage = recipientResult.rows[0]?.profile_image || null;
 
     // ✅ Check if recipient has a wallet
     const walletCheck = await query('SELECT id FROM wallets WHERE user_id = $1', [recipientId]);
@@ -633,8 +637,8 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
       [senderId, amt, `Gift sent: ${giftName} to ${recipientName}`]
     );
 
-    // ✅ ✅ ✅ CREATE NOTIFICATION FOR RECIPIENT ✅ ✅ ✅
-    const notifResult = await query(
+    // ✅ ✅ ✅ NOTIFICATION FOR RECIPIENT (Gift Received) ✅ ✅ ✅
+    const recipientNotif = await query(
       `INSERT INTO notifications (user_id, type, title, message, image_url, target_id, target_name, extra_data, created_at, is_read)
        VALUES ($1, 'gift', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, false)
        RETURNING id`,
@@ -643,13 +647,31 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
         `🎁 ${giftName} Received!`,
         `${senderName} sent you ${giftName} worth ₵${amt}! 🎉`,
         senderImage,
-        senderId.toString(),
+        null,
         senderName,
         JSON.stringify({ senderName, giftName, amount: amt })
       ]
     );
 
-    console.log(`✅ Notification created for recipient ${recipientId} (ID: ${notifResult.rows[0]?.id})`);
+    console.log(`✅ Recipient notification created (ID: ${recipientNotif.rows[0]?.id})`);
+
+    // ✅ ✅ ✅ NOTIFICATION FOR SENDER (Gift Sent) ✅ ✅ ✅
+    const senderNotif = await query(
+      `INSERT INTO notifications (user_id, type, title, message, image_url, target_id, target_name, extra_data, created_at, is_read)
+       VALUES ($1, 'gift_sent', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, false)
+       RETURNING id`,
+      [
+        senderId,
+        `🎁 ${giftName} Sent!`,
+        `You sent ${giftName} worth ₵${amt} to ${recipientName}! 🎉`,
+        recipientImage,
+        null,
+        recipientName,
+        JSON.stringify({ recipientName, giftName, amount: amt })
+      ]
+    );
+
+    console.log(`✅ Sender notification created (ID: ${senderNotif.rows[0]?.id})`);
 
     res.json({ 
       success: true, 
@@ -658,7 +680,8 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
       recipientName: recipientName,
       amount: amt,
       giftName: giftName,
-      notificationId: notifResult.rows[0]?.id
+      recipientNotificationId: recipientNotif.rows[0]?.id,
+      senderNotificationId: senderNotif.rows[0]?.id
     });
 
   } catch (error) {
@@ -817,15 +840,10 @@ app.post('/api/wallet/withdraw', verifyToken, async (req, res) => {
   }
 });
 
-// ============ SERVER START ============
-app.listen(PORT, "0.0.0.0", () => {
-// ============================================================
-// GET /api/follows - Get users the current user follows
-// ============================================================
+// ============ FOLLOWS ============
 app.get('/api/follows', verifyToken, async (req, res) => {
   try {
     const userId = req.userId;
-    
     const result = await query(
       `SELECT u.id, u.name, u.username, u.profile_image
        FROM follows f
@@ -834,7 +852,6 @@ app.get('/api/follows', verifyToken, async (req, res) => {
        ORDER BY u.name ASC`,
       [userId]
     );
-    
     res.json({ following: result.rows });
   } catch (error) {
     console.error('❌ Get follows error:', error);
@@ -842,7 +859,6 @@ app.get('/api/follows', verifyToken, async (req, res) => {
   }
 });
 
-// POST /api/follows/:userId - Follow a user
 app.post('/api/follows/:userId', verifyToken, async (req, res) => {
   try {
     const followerId = req.userId;
@@ -852,7 +868,6 @@ app.post('/api/follows/:userId', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Cannot follow yourself' });
     }
     
-    // Check if already following
     const existing = await query(
       'SELECT id FROM follows WHERE follower_id = $1 AND following_id = $2',
       [followerId, followingId]
@@ -874,7 +889,6 @@ app.post('/api/follows/:userId', verifyToken, async (req, res) => {
   }
 });
 
-// DELETE /api/follows/:userId - Unfollow a user
 app.delete('/api/follows/:userId', verifyToken, async (req, res) => {
   try {
     const followerId = req.userId;
@@ -891,12 +905,10 @@ app.delete('/api/follows/:userId', verifyToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to unfollow user' });
   }
 });
-// ============================================================
-// GET /api/banners - Get all banners
-// ============================================================
+
+// ============ BANNERS ============
 app.get('/api/banners', async (req, res) => {
   try {
-    // Try to get from database
     const result = await query(
       `SELECT id, title, subtitle, icon, colors, active, priority, views_count, clicks_count, created_at
        FROM banners 
@@ -922,7 +934,6 @@ app.get('/api/banners', async (req, res) => {
       });
     }
 
-    // Fallback banners
     res.json({
       success: true,
       banners: [
@@ -932,8 +943,6 @@ app.get('/api/banners', async (req, res) => {
           subtitle: 'Check out today\'s events!',
           icon: '🎂',
           colors: ['#6366f1', '#8b5cf6', '#a855f7'],
-          type: 'celebrations',
-          link: 'today',
           active: true,
           priority: 1,
           views: 0,
@@ -946,8 +955,6 @@ app.get('/api/banners', async (req, res) => {
           subtitle: 'Send a gift to someone special',
           icon: '🎁',
           colors: ['#ec4899', '#f472b6', '#f9a8d4'],
-          type: 'gifts',
-          link: 'gift_shop',
           active: true,
           priority: 2,
           views: 0,
@@ -990,35 +997,167 @@ app.get('/api/banners', async (req, res) => {
   }
 });
 
-// POST /api/banners/:id/view - Track banner view
 app.post('/api/banners/:id/view', async (req, res) => {
   try {
     const { id } = req.params;
-    // Try to update view count in database
-    await query(
-      'UPDATE banners SET views_count = views_count + 1 WHERE id = $1',
-      [id]
-    ).catch(() => {});
+    await query('UPDATE banners SET views_count = views_count + 1 WHERE id = $1', [id]).catch(() => {});
     res.json({ success: true });
   } catch (error) {
     res.json({ success: true });
   }
 });
 
-// POST /api/banners/:id/click - Track banner click
 app.post('/api/banners/:id/click', async (req, res) => {
   try {
     const { id } = req.params;
-    await query(
-      'UPDATE banners SET clicks_count = clicks_count + 1 WHERE id = $1',
-      [id]
-    ).catch(() => {});
+    await query('UPDATE banners SET clicks_count = clicks_count + 1 WHERE id = $1', [id]).catch(() => {});
     res.json({ success: true });
   } catch (error) {
     res.json({ success: true });
   }
 });
+
+// ============================================================
+// STORIES ROUTES
+// ============================================================
+
+// GET /api/stories - Get all stories
+app.get('/api/stories', verifyToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT s.*, u.name as user_name, u.username as user_handle, u.profile_image as user_avatar
+       FROM stories s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.expires_at > NOW()
+       ORDER BY s.created_at DESC`
+    );
+    res.json({ stories: result.rows });
+  } catch (error) {
+    console.error('Get stories error:', error);
+    res.json({ stories: [] });
+  }
+});
+
+// POST /api/stories - Create a story
+app.post('/api/stories', verifyToken, storyUpload.single('content'), async (req, res) => {
+  try {
+    const { isVideo, caption } = req.body;
+    const userId = req.userId;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No content uploaded' });
+    }
+    
+    const contentUrl = `http://localhost:5000/uploads/${req.file.filename}`;
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    
+    const result = await query(
+      `INSERT INTO stories (user_id, content_url, is_video, caption, expires_at)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [userId, contentUrl, isVideo === 'true', caption || '', expiresAt]
+    );
+    
+    res.status(201).json({ story: result.rows[0] });
+  } catch (error) {
+    console.error('Create story error:', error);
+    res.status(500).json({ error: 'Failed to create story' });
+  }
+});
+
+// POST /api/stories/:id/view - Mark story as viewed
+app.post('/api/stories/:id/view', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+    
+    await query(
+      `INSERT INTO story_views (story_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (story_id, user_id) DO NOTHING`,
+      [id, userId]
+    );
+    
+    await query(
+      'UPDATE stories SET views_count = views_count + 1 WHERE id = $1',
+      [id]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('View story error:', error);
+    res.json({ success: true });
+  }
+});
+
+// POST /api/stories/:id/like - Like a story
+app.post('/api/stories/:id/like', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+    
+    await query(
+      `INSERT INTO story_likes (story_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (story_id, user_id) DO NOTHING`,
+      [id, userId]
+    );
+    
+    await query(
+      'UPDATE stories SET likes_count = likes_count + 1 WHERE id = $1',
+      [id]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Like story error:', error);
+    res.status(500).json({ error: 'Failed to like story' });
+  }
+});
+
+// DELETE /api/stories/:id/like - Unlike a story
+app.delete('/api/stories/:id/like', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+    
+    await query(
+      'DELETE FROM story_likes WHERE story_id = $1 AND user_id = $2',
+      [id, userId]
+    );
+    
+    await query(
+      'UPDATE stories SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1',
+      [id]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Unlike story error:', error);
+    res.status(500).json({ error: 'Failed to unlike story' });
+  }
+});
+
+// ============ SERVER START ============
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`✅ PostgreSQL connected`);
   console.log(`📝 All routes loaded`);
+});
+
+// ============================================================
+// STORIES UPLOAD CONFIG
+// ============================================================
+const storyUpload = multer({
+  storage: storage,
+  limits: { 
+    fileSize: 20 * 1024 * 1024, // 20MB for stories
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.fieldname === 'content') {
+      cb(null, ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime'].includes(file.mimetype));
+    } else {
+      cb(null, false);
+    }
+  }
 });

@@ -216,3 +216,33 @@ export const walletApi = {
 };
 
 export default api;
+
+// ============================================================
+// STORIES API
+// ============================================================
+export const storiesApi = {
+  getAll: async () => {
+    const response = await api.get('/stories');
+    return response.data;
+  },
+  create: async (formData: any) => {
+    const response = await api.post('/stories', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  like: async (storyId: string) => {
+    await api.post(`/stories/${storyId}/like`);
+  },
+  unlike: async (storyId: string) => {
+    await api.delete(`/stories/${storyId}/like`);
+  },
+  view: async (storyId: string) => {
+    await api.post(`/stories/${storyId}/view`);
+  },
+  delete: async (storyId: string) => {
+    await api.delete(`/stories/${storyId}`);
+  },
+};

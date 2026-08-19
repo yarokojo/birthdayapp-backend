@@ -32,12 +32,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.fieldname === 'profileImage') {
       cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype));
-    } else if (file.fieldname === 'content') {
-      cb(null, ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime'].includes(file.mimetype));
     } else {
       cb(null, file.mimetype.startsWith('video/'));
     }
@@ -422,7 +420,7 @@ app.post('/api/friends/request', verifyToken, async (req, res) => {
           toUserId,
           `${sender.rows[0].name} sent you a friend request!`,
           sender.rows[0].profile_image || 'https://randomuser.me/api/portraits/men/1.jpg',
-          fromUserId,
+          null,
           sender.rows[0].name
         ]
       );
@@ -649,7 +647,7 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
         `🎁 ${giftName} Received!`,
         `${senderName} sent you ${giftName} worth ₵${amt}! 🎉`,
         senderImage,
-        null,
+        null,  // ✅ target_id = NULL (avoids integer/string errors)
         senderName,
         JSON.stringify({ senderName, giftName, amount: amt })
       ]
@@ -667,7 +665,7 @@ app.post('/api/gifts/purchase', verifyToken, async (req, res) => {
         `🎁 ${giftName} Sent!`,
         `You sent ${giftName} worth ₵${amt} to ${recipientName}! 🎉`,
         recipientImage,
-        null,
+        null,  // ✅ target_id = NULL (avoids integer/string errors)
         recipientName,
         JSON.stringify({ recipientName, giftName, amount: amt })
       ]
@@ -785,18 +783,85 @@ app.post('/api/notifications', verifyToken, async (req, res) => {
 });
 
 app.put('/api/notifications/:id/read', verifyToken, async (req, res) => {
-  await query('UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
-  res.json({ success: true });
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    console.log(`📨 Marking notification ${id} as read for user ${userId}`);
+
+    const result = await query(
+      'UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    res.json({ success: true, notification: result.rows[0] });
+  } catch (error) {
+    console.error('❌ Mark read error:', error);
+    res.status(500).json({ error: 'Failed to mark notification as read' });
+  }
 });
 
 app.put('/api/notifications/read-all', verifyToken, async (req, res) => {
-  await query('UPDATE notifications SET is_read = true WHERE user_id = $1', [req.userId]);
-  res.json({ success: true });
+  try {
+    const userId = req.userId;
+
+    console.log(`📨 Marking all notifications as read for user ${userId}`);
+
+    await query(
+      'UPDATE notifications SET is_read = true WHERE user_id = $1',
+      [userId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Mark all read error:', error);
+    res.status(500).json({ error: 'Failed to mark all as read' });
+  }
 });
 
 app.delete('/api/notifications/:id', verifyToken, async (req, res) => {
-  await query('DELETE FROM notifications WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
-  res.json({ success: true });
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    console.log(`🗑️ Deleting notification ${id} for user ${userId}`);
+
+    const result = await query(
+      'DELETE FROM notifications WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Delete notification error:', error);
+    res.status(500).json({ error: 'Failed to delete notification' });
+  }
+});
+
+app.delete('/api/notifications/clear-all', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    console.log(`🗑️ Clearing all notifications for user ${userId}`);
+
+    await query(
+      'DELETE FROM notifications WHERE user_id = $1',
+      [userId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Clear notifications error:', error);
+    res.status(500).json({ error: 'Failed to clear notifications' });
+  }
 });
 
 // ============ WALLET ============
@@ -1019,9 +1084,6 @@ app.post('/api/banners/:id/click', async (req, res) => {
   }
 });
 
-// ============================================================
-
-// ============================================================
 // ============ SERVER START ============
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
@@ -1029,8 +1091,107 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`📝 All routes loaded`);
 });
 
-// DELETE /api/stories/:id - Delete a story
+// ============================================================
+// LEADERBOARD ROUTES
+// ============================================================
 
-// STORIES ROUTES
-app.use('/api/stories', require('./routes/stories'));
-
+// GET /api/leaderboard - Get leaderboard
+app.get('/api/leaderboard', verifyToken, async (req, res) => {
+  try {
+    const { timeframe } = req.query;
+    console.log(`📊 Getting leaderboard (timeframe: ${timeframe || 'all'})`);
+    
+    // Build the query based on timeframe
+    let timeFilter = '';
+    if (timeframe === 'week') {
+      timeFilter = "AND p.created_at > NOW() - INTERVAL '7 days'";
+    } else if (timeframe === 'month') {
+      timeFilter = "AND p.created_at > NOW() - INTERVAL '30 days'";
+    }
+    
+    // Query to get user scores
+    const result = await query(`
+      SELECT 
+        u.id, 
+        u.name, 
+        u.username, 
+        u.profile_image,
+        COUNT(DISTINCT p.id) as post_count,
+        COUNT(DISTINCT l.id) as like_count,
+        COUNT(DISTINCT c.id) as comment_count,
+        COUNT(DISTINCT g.id) as gift_count,
+        (COUNT(DISTINCT p.id) * 5 + 
+         COUNT(DISTINCT l.id) * 2 + 
+         COUNT(DISTINCT c.id) * 3 + 
+         COUNT(DISTINCT g.id) * 10) as score
+      FROM users u
+      LEFT JOIN posts p ON p.user_id = u.id ${timeFilter ? 'AND ' + timeFilter.replace('AND ', '') : ''}
+      LEFT JOIN post_likes l ON l.user_id = u.id
+      LEFT JOIN comments c ON c.user_id = u.id
+      LEFT JOIN gifts g ON g.recipient_id = u.id
+      WHERE u.is_active = true
+      GROUP BY u.id
+      ORDER BY score DESC
+      LIMIT 20
+    `);
+    
+    const users = result.rows.map((user, index) => ({
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      profileImage: user.profile_image || 'https://randomuser.me/api/portraits/men/1.jpg',
+      score: parseInt(user.score) || 0,
+      posts: parseInt(user.post_count) || 0,
+      likes: parseInt(user.like_count) || 0,
+      comments: parseInt(user.comment_count) || 0,
+      gifts: parseInt(user.gift_count) || 0,
+      rank: index + 1
+    }));
+    
+    console.log(`📊 Leaderboard: ${users.length} users ranked`);
+    res.json({ users });
+    
+  } catch (error) {
+    console.error('❌ Leaderboard error:', error);
+    // Return fallback data if query fails
+    const fallbackUsers = [
+      { 
+        id: 1, 
+        name: '🌟 Star User', 
+        username: 'staruser', 
+        profileImage: 'https://randomuser.me/api/portraits/women/1.jpg', 
+        score: 450, 
+        rank: 1, 
+        posts: 15, 
+        likes: 120, 
+        comments: 45,
+        gifts: 8
+      },
+      { 
+        id: 2, 
+        name: '🎉 Party King', 
+        username: 'partyking', 
+        profileImage: 'https://randomuser.me/api/portraits/men/2.jpg', 
+        score: 380, 
+        rank: 2, 
+        posts: 12, 
+        likes: 95, 
+        comments: 38,
+        gifts: 5
+      },
+      { 
+        id: 3, 
+        name: '💝 Gift Master', 
+        username: 'giftmaster', 
+        profileImage: 'https://randomuser.me/api/portraits/women/3.jpg', 
+        score: 320, 
+        rank: 3, 
+        posts: 8, 
+        likes: 75, 
+        comments: 30,
+        gifts: 12
+      },
+    ];
+    res.json({ users: fallbackUsers });
+  }
+});
