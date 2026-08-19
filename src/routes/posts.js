@@ -304,3 +304,97 @@ router.delete("/:postId/comments/:commentId", requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+// ============================================================
+// PUT /:postId/comments/:commentId - Edit a comment
+// ============================================================
+router.put("/:postId/comments/:commentId", requireAuth, async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const { text } = req.body;
+    const userId = req.userId;
+
+    console.log("✏️ Edit comment:", { postId, commentId, userId, text });
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Comment text is required" });
+    }
+
+    // Check if comment exists and belongs to user
+    const checkResult = await query(
+      `SELECT id, user_id, post_id FROM comments
+       WHERE id = $1 AND post_id = $2`,
+      [commentId, postId]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: "Comment not found" });
+    }
+
+    if (checkResult.rows[0].user_id !== userId) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+
+    // Update comment
+    const result = await query(
+      `UPDATE comments 
+       SET text = $1, updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $2 AND post_id = $3
+       RETURNING id, text, created_at, updated_at`,
+      [text.trim(), commentId, postId]
+    );
+
+    res.json({
+      success: true,
+      comment: {
+        id: result.rows[0].id,
+        text: result.rows[0].text,
+        createdAt: result.rows[0].created_at,
+        updatedAt: result.rows[0].updated_at
+      }
+    });
+  } catch (error) {
+    console.error("❌ Edit comment error:", error);
+    res.status(500).json({ error: "Failed to edit comment" });
+  }
+});
+
+// ============================================================
+// DELETE /:postId/comments/:commentId - Delete a comment
+// ============================================================
+router.delete("/:postId/comments/:commentId", requireAuth, async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const userId = req.userId;
+
+    console.log("🗑️ Delete comment:", { postId, commentId, userId });
+
+    // Check if comment exists and belongs to user
+    const checkResult = await query(
+      `SELECT id, user_id FROM comments
+       WHERE id = $1 AND post_id = $2`,
+      [commentId, postId]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: "Comment not found" });
+    }
+
+    if (checkResult.rows[0].user_id !== userId) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+
+    // Delete comment
+    await query("DELETE FROM comments WHERE id = $1", [commentId]);
+
+    // Decrement comment count
+    await query(
+      "UPDATE posts SET comments_count = GREATEST(comments_count - 1, 0) WHERE id = $1",
+      [postId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("❌ Delete comment error:", error);
+    res.status(500).json({ error: "Failed to delete comment" });
+  }
+});
