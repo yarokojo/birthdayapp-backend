@@ -1586,3 +1586,158 @@ app.get("/api/leaderboard", verifyToken, async (req, res) => {
     res.json({ users: mockUsers });
   }
 });
+
+// ============================================================
+// CALENDAR ENDPOINTS
+// ============================================================
+
+// GET /calendar/events/me - Get user's calendar events
+app.get("/api/calendar/events/me", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    console.log(`📅 Getting calendar events for user: ${userId}`);
+
+    // Check if calendar_events table exists
+    try {
+      const tableCheck = await query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = 'calendar_events'
+        )
+      `);
+      
+      if (!tableCheck.rows[0].exists) {
+        console.log('📅 Calendar events table does not exist yet');
+        return res.json({ events: [] });
+      }
+    } catch (e) {
+      console.log('📅 Error checking calendar_events table:', e.message);
+      return res.json({ events: [] });
+    }
+
+    const result = await query(
+      `SELECT id, title, date, type, celebrant_name, celebrant_id, 
+              reminder_set, reminder_time, created_at
+       FROM calendar_events
+       WHERE user_id = $1
+       ORDER BY date ASC`,
+      [userId]
+    );
+
+    console.log(`📅 Found ${result.rows.length} calendar events`);
+    res.json({ events: result.rows });
+  } catch (error) {
+    console.error('❌ Get calendar events error:', error);
+    res.json({ events: [] });
+  }
+});
+
+// POST /calendar/events - Create a calendar event
+app.post("/api/calendar/events", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { title, date, type, celebrantName, celebrantId, reminderSet } = req.body;
+
+    if (!title || !date) {
+      return res.status(400).json({ error: 'Title and date are required' });
+    }
+
+    // Create calendar_events table if not exists
+    await query(`
+      CREATE TABLE IF NOT EXISTS calendar_events (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        date DATE NOT NULL,
+        type VARCHAR(50) DEFAULT 'birthday',
+        celebrant_name VARCHAR(255),
+        celebrant_id VARCHAR(255),
+        reminder_set BOOLEAN DEFAULT FALSE,
+        reminder_time TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    const result = await query(
+      `INSERT INTO calendar_events (user_id, title, date, type, celebrant_name, celebrant_id, reminder_set)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [userId, title, date, type || 'birthday', celebrantName, celebrantId, reminderSet || false]
+    );
+
+    res.status(201).json({ event: result.rows[0] });
+  } catch (error) {
+    console.error('❌ Create calendar event error:', error);
+    res.status(500).json({ error: 'Failed to create event' });
+  }
+});
+
+// DELETE /calendar/events/:id - Delete a calendar event
+app.delete("/api/calendar/events/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    const result = await query(
+      'DELETE FROM calendar_events WHERE id = $1 AND user_id = $2 RETURNING id',
+      [id, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Delete calendar event error:', error);
+    res.status(500).json({ error: 'Failed to delete event' });
+  }
+});
+
+// PUT /calendar/events/:id/reminder - Toggle reminder
+app.put("/api/calendar/events/:id/reminder", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    const result = await query(
+      `UPDATE calendar_events 
+       SET reminder_set = NOT reminder_set, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND user_id = $2
+       RETURNING *`,
+      [id, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    res.json({ event: result.rows[0] });
+  } catch (error) {
+    console.error('❌ Toggle reminder error:', error);
+    res.status(500).json({ error: 'Failed to toggle reminder' });
+  }
+});
+
+// GET /calendar/events - Get all calendar events (alternative endpoint)
+app.get("/api/calendar/events", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    console.log(`📅 Getting all calendar events for user: ${userId}`);
+
+    const result = await query(
+      `SELECT id, title, date, type, celebrant_name, celebrant_id, 
+              reminder_set, reminder_time, created_at
+       FROM calendar_events
+       WHERE user_id = $1
+       ORDER BY date ASC`,
+      [userId]
+    );
+
+    res.json({ events: result.rows });
+  } catch (error) {
+    console.error('❌ Get calendar events error:', error);
+    res.json({ events: [] });
+  }
+});
