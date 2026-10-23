@@ -95,6 +95,27 @@ router.post('/purchase', requireAuth, [
     }
     console.log('✅ Wallet ready');
 
+    // ✅ Step 3.5: Check and Debit the sender
+console.log(`📌 Step 3.5: Checking sender balance...`);
+const senderWallet = await query('SELECT balance FROM wallets WHERE user_id = $1', [senderId]);
+if (senderWallet.rows.length === 0) {
+  return res.status(400).json({ error: 'Sender wallet not found' });
+}
+const senderBalance = parseFloat(senderWallet.rows[0].balance);
+if (senderBalance < giftAmount) {
+  return res.status(400).json({ error: 'Insufficient balance' });
+}
+
+await query(
+  `UPDATE wallets 
+   SET balance = balance - $1,
+       total_sent = total_sent + $1,
+       updated_at = CURRENT_TIMESTAMP
+   WHERE user_id = $2`,
+  [giftAmount, senderId]
+);
+console.log(`✅ Debited ₵${giftAmount} from sender's wallet`);
+
     // ✅ Step 4: Add gift to recipient's wallet
     console.log(`📌 Step 4: Adding ₵${giftAmount} to recipient's wallet...`);
     await query(

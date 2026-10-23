@@ -132,7 +132,7 @@ router.post('/withdraw', requireAuth, async (req, res) => {
       success: true,
       newBalance: newBalance,
       fee: fee,
-      userReceives: amountNum - fee
+      userReceives: amountNum
     });
   } catch (error) {
     console.error('❌ Withdraw error:', error);
