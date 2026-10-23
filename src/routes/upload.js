@@ -28,7 +28,7 @@ const imageStorage = multer.diskStorage({
 
 const imageUpload = multer({
   storage: imageStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
@@ -38,7 +38,7 @@ const imageUpload = multer({
   }
 });
 
-router.post('/image', requireAuth, imageUpload.single('image'), (req, res) => {
+router.post('/image', requireAuth, imageUpload.single('profileImage'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image file uploaded' });
