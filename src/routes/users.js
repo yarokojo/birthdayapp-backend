@@ -33,7 +33,7 @@ router.get('/profile', requireAuth, async (req, res) => {
 
 router.put('/profile', requireAuth, async (req, res) => {
   try {
-    const { name, username, bio, location, phone, network, birth_date } = req.body;
+    const { name, username, bio, location, phone, network, birth_date, profile_image } = req.body;
     const userId = req.userId;
 
     let finalUsername = null;
@@ -64,6 +64,9 @@ router.put('/profile', requireAuth, async (req, res) => {
     if (phone !== undefined) { fields.push(`phone = $${count++}`); values.push(phone); }
     if (network !== undefined) { fields.push(`network = $${count++}`); values.push(network); }
     if (cleanBirthDate) { fields.push(`birth_date = $${count++}`); values.push(cleanBirthDate); }
+    
+    // ✅ SAVE THE IMAGE URL IF IT'S PROVIDED
+    if (profile_image) { fields.push(`profile_image = $${count++}`); values.push(profile_image); }
 
     if (fields.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
@@ -73,12 +76,13 @@ router.put('/profile', requireAuth, async (req, res) => {
     const queryStr = `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${count} RETURNING id, email, name, username, bio, location, profile_image, phone, network, birth_date`;
 
     const result = await query(queryStr, values);
+
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
     res.json(result.rows[0]);
   } catch (error) {
     console.error('❌ Update profile error:', error.message);
-    res.status(400).json({ error: error.message }); // Print the exact error
+    res.status(400).json({ error: error.message });
   }
 });
 
