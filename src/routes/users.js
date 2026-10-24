@@ -36,7 +36,19 @@ router.put('/profile', requireAuth, async (req, res) => {
     const { name, username, bio, location, phone, network, birth_date } = req.body;
     const userId = req.userId;
 
-    // ✅ FIX: Extract just the YYYY-MM-DD from the birth_date
+    // ✅ Check if the username is actually taken by SOMEONE ELSE
+    let finalUsername = null;
+    if (username) {
+      const existing = await query(
+        'SELECT id FROM users WHERE username = $1 AND id != $2',
+        [username.toLowerCase(), userId]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(400).json({ error: 'Username already taken' });
+      }
+      finalUsername = username.toLowerCase();
+    }
+
     let cleanBirthDate = null;
     if (birth_date) {
       cleanBirthDate = birth_date.split('T')[0]; 
@@ -47,7 +59,7 @@ router.put('/profile', requireAuth, async (req, res) => {
     let count = 1;
 
     if (name) { fields.push(`name = $${count++}`); values.push(name); }
-    if (username) { fields.push(`username = $${count++}`); values.push(username.toLowerCase()); }
+    if (finalUsername) { fields.push(`username = $${count++}`); values.push(finalUsername); }
     if (bio !== undefined) { fields.push(`bio = $${count++}`); values.push(bio); }
     if (location !== undefined) { fields.push(`location = $${count++}`); values.push(location); }
     if (phone !== undefined) { fields.push(`phone = $${count++}`); values.push(phone); }
