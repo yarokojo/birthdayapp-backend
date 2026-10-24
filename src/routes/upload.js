@@ -43,6 +43,7 @@ router.post('/image', requireAuth, imageUpload.single('profileImage'), (req, res
     if (!req.file) {
       return res.status(400).json({ error: 'No image file uploaded' });
     }
+    // ✅ Make sure this saves to /uploads/images/
     const imageUrl = `${req.protocol}://${req.get('host')}/uploads/images/${req.file.filename}`;
     res.json({ success: true, imageUrl });
   } catch (error) {
