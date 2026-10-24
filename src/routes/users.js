@@ -36,7 +36,6 @@ router.put('/profile', requireAuth, async (req, res) => {
     const { name, username, bio, location, phone, network, birth_date } = req.body;
     const userId = req.userId;
 
-    // ✅ Check if the username is actually taken by SOMEONE ELSE
     let finalUsername = null;
     if (username) {
       const existing = await query(
@@ -79,8 +78,11 @@ router.put('/profile', requireAuth, async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('❌ Update profile error:', error);
-    res.status(500).json({ error: 'Failed to update profile' });
+    // ✅ THIS WILL PRINT THE EXACT ERROR IN RENDER LOGS
+    console.error('❌ Update profile error:', error.message);
+    
+    // ✅ THIS SENDS THE EXACT ERROR TO THE APP
+    res.status(400).json({ error: error.message || 'Failed to update profile' });
   }
 });
 
