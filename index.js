@@ -281,56 +281,69 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
   }
 });
 
+
+// ============================================================
+// PUT /api/users/profile - Update user profile
+// ============================================================
 app.put('/api/users/profile', verifyToken, async (req, res) => {
   try {
-    const { name, username, bio, location, profile_image, phone, network, birth_date } = req.body;
     const userId = req.userId;
+    const userIndex = data.users.findIndex(u => u.id === userId || u.id === parseInt(userId));
 
-    if (username) {
-      const existing = await query(
-        'SELECT id FROM users WHERE username = $1 AND id != $2',
-        [username.toLowerCase(), userId]
-      );
-      if (existing.rows.length > 0) {
-        return res.status(400).json({ error: 'Username already taken' });
-      }
-    }
-
-    const fields = [];
-    const values = [];
-    let paramCount = 1;
-
-    const fieldMap = { name, username, bio, location, profile_image, phone, network, birth_date };
-    for (const [key, value] of Object.entries(fieldMap)) {
-      if (value !== undefined) {
-        fields.push(`${key} = $${paramCount}`);
-        values.push(key === 'username' ? value.toLowerCase() : value);
-        paramCount++;
-      }
-    }
-
-    if (fields.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    values.push(userId);
-    const result = await query(
-      `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $${paramCount} 
-       RETURNING id, email, name, username, bio, location, profile_image, phone, network, birth_date`,
-      values
-    );
-
-    if (result.rows.length === 0) {
+    if (userIndex === -1) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json(result.rows[0]);
+    const { name, username, bio, location, phone, network, birth_date, birthDate, profile_image, profileImage } = req.body;
+    const user = data.users[userIndex];
+
+    if (username && username.toLowerCase() !== user.username) {
+      const exists = data.users.find(u => u.username === username.toLowerCase() && u.id !== user.id);
+      if (exists) {
+        return res.status(400).json({ error: 'Username already taken' });
+      }
+      user.username = username.toLowerCase();
+    }
+
+    if (name) user.name = name;
+    if (bio !== undefined) user.bio = bio;
+    if (location !== undefined) user.location = location;
+    if (phone !== undefined) user.phone = phone;
+    if (network !== undefined) user.network = network;
+    
+    const finalImage = profileImage || profile_image;
+    if (finalImage && finalImage.startsWith('http')) {
+      user.profileImage = finalImage;
+    }
+
+    const finalDate = birth_date || birthDate;
+    if (finalDate) {
+      user.birthDate = finalDate.split('T')[0];
+    }
+
+    saveData();
+
+    res.json({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      username: user.username,
+      bio: user.bio,
+      location: user.location,
+      profile_image: user.profileImage,
+      profileImage: user.profileImage,
+      phone: user.phone,
+      network: user.network,
+      birth_date: user.birthDate,
+      birthDate: user.birthDate,
+      created_at: user.created_at
+    });
   } catch (error) {
-    console.error('Update profile error:', error);
-    res.status(500).json({ error: 'Failed to update profile' });
+    console.error('❌ Update profile error:', error);
+    res.status(400).json({ error: error.message || 'Failed to update profile' });
   }
 });
+
 
 app.post('/api/users/profile/image', verifyToken, profileUpload.single('profileImage'), async (req, res) => {
   try {

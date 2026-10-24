@@ -31,58 +31,68 @@ router.get('/profile', requireAuth, async (req, res) => {
   }
 });
 
-router.put('/profile', requireAuth, async (req, res) => {
+// ============================================================
+// PUT /api/users/profile - Update user profile
+// ============================================================
+app.put('/api/users/profile', verifyToken, async (req, res) => {
   try {
-    const { name, username, bio, location, phone, network, birth_date } = req.body;
     const userId = req.userId;
+    const userIndex = data.users.findIndex(u => u.id === userId || u.id === parseInt(userId));
 
-    let finalUsername = null;
-    if (username) {
-      const existing = await query(
-        'SELECT id FROM users WHERE username = $1 AND id != $2',
-        [username.toLowerCase(), userId]
-      );
-      if (existing.rows.length > 0) {
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { name, username, bio, location, phone, network, birth_date, birthDate, profile_image, profileImage } = req.body;
+    const user = data.users[userIndex];
+
+    // ✅ Check username only if it changed
+    if (username && username.toLowerCase() !== user.username) {
+      const exists = data.users.find(u => u.username === username.toLowerCase() && u.id !== user.id);
+      if (exists) {
         return res.status(400).json({ error: 'Username already taken' });
       }
-      finalUsername = username.toLowerCase();
+      user.username = username.toLowerCase();
     }
 
-    let cleanBirthDate = null;
-    if (birth_date) {
-      cleanBirthDate = birth_date.split('T')[0]; 
-    }
-
-    const fields = [];
-    const values = [];
-    let count = 1;
-
-    if (name) { fields.push(`name = $${count++}`); values.push(name); }
-    if (finalUsername) { fields.push(`username = $${count++}`); values.push(finalUsername); }
-    if (bio !== undefined) { fields.push(`bio = $${count++}`); values.push(bio); }
-    if (location !== undefined) { fields.push(`location = $${count++}`); values.push(location); }
-    if (phone !== undefined) { fields.push(`phone = $${count++}`); values.push(phone); }
-    if (network !== undefined) { fields.push(`network = $${count++}`); values.push(network); }
-    if (cleanBirthDate) { fields.push(`birth_date = $${count++}`); values.push(cleanBirthDate); }
-
-    if (fields.length === 0) {
-      return res.status(400).json({ error: 'No valid fields to update' });
-    }
-
-    values.push(userId);
-    const queryStr = `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${count} RETURNING id, email, name, username, bio, location, profile_image, phone, network, birth_date`;
-
-    const result = await query(queryStr, values);
-
-    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    // ✅ THIS WILL PRINT THE EXACT ERROR IN RENDER LOGS
-    console.error('❌ Update profile error:', error.message);
+    if (name) user.name = name;
+    if (bio !== undefined) user.bio = bio;
+    if (location !== undefined) user.location = location;
+    if (phone !== undefined) user.phone = phone;
+    if (network !== undefined) user.network = network;
     
-    // ✅ THIS SENDS THE EXACT ERROR TO THE APP
-    res.status(400).json({ error: error.message || 'Failed to update profile' });
+    // ✅ Only save the image if it's a valid URL (http/https), not a local file://
+    const finalImage = profileImage || profile_image;
+    if (finalImage && finalImage.startsWith('http')) {
+      user.profileImage = finalImage;
+    }
+
+    // ✅ Format birth date safely
+    const finalDate = birth_date || birthDate;
+    if (finalDate) {
+      user.birthDate = finalDate.split('T')[0];
+    }
+
+    saveData(); // Save to data.json
+
+    res.json({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      username: user.username,
+      bio: user.bio,
+      location: user.location,
+      profile_image: user.profileImage,
+      profileImage: user.profileImage,
+      phone: user.phone,
+      network: user.network,
+      birth_date: user.birthDate,
+      birthDate: user.birthDate,
+      created_at: user.created_at
+    });
+  } catch (error) {
+    console.error('❌ Update profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
